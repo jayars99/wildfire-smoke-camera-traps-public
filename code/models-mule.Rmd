@@ -1,0 +1,128 @@
+---
+title: "Mule deer"
+author: "Jessalyn Ayars"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(here)
+library(lme4)
+select <- dplyr::select
+```
+
+## Poisson regression
+
+```{r}
+full_data.mule <- read_csv(here("data-tidy", "poisson-data-mule.csv"))
+```
+
+### Poisson model selection
+```{r}
+covs=c("scale.days", "I(scale.days^2)", "Road_Type", "scale.cheight", "I(scale.cheight^2)", "scale.dtr", "I(scale.dtr^2)", "scale.temp", "I(scale.temp^2)", "conifer", "landmg2", "scale.elev", "I(scale.elev^2)", "scale.wadnr", "I(scale.wadnr^2)")
+
+covs.list = paste(covs, collapse="+")  
+form = as.formula(paste("delta_times_pics ~ (1|Cell_ID) +",covs.list))
+
+det.mule.step <- glmer(formula = form, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+
+while(max(summary(det.mule.step)$coefficients[-1,4]) > 0.05){
+  remove=which(summary(det.mule.step)$coefficients[-1,4] == max(summary(det.mule.step)$coefficients[-1,4]))
+  if ((covs[remove] == "scale.days" & "I(scale.days^2)" %in% covs) |
+      (covs[remove] == "scale.cheight" & "I(scale.cheight^2)" %in% covs) |
+      (covs[remove] == "scale.dtr" & "I(scale.dtr^2)" %in% covs) |
+      (covs[remove] == "scale.temp" & "I(scale.temp^2)" %in% covs) |
+      (covs[remove] == "scale.elev" & "I(scale.elev^2)" %in% covs) |
+      (covs[remove] == "scale.wadnr" & "I(scale.wadnr^2)" %in% covs)) {
+    break
+  }  
+  covs = covs[-remove]
+  if(length(covs) > 0) {
+    covs.list = paste(covs, collapse="+")
+    form = as.formula(paste("delta_times_pics ~ (1|Cell_ID) +", covs.list))}
+  else {
+   form = as.formula("delta_times_pics ~ (1|Cell_ID)") 
+  }
+  det.mule.step <- glmer(formula = form, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+}
+summary(det.mule.step) # continue from here, remove wadnr^2
+det.mule.step.2 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.cheight + I(scale.cheight^2) + scale.dtr + 
+    scale.temp + I(scale.temp^2) + conifer + landmg2 + scale.elev + 
+    I(scale.elev^2) + scale.wadnr, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.2) # remove road type
+det.mule.step.3 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.dtr + scale.temp + I(scale.temp^2) + conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.3) # remove dtr
+det.mule.step.4 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.temp + I(scale.temp^2) + conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.4) # remove land mg
+det.mule.step.5 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.temp + I(scale.temp^2) + conifer + scale.elev + I(scale.elev^2) + scale.wadnr, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.5) # remove elev^2
+det.mule.step.6 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.temp + I(scale.temp^2) + conifer + scale.elev + scale.wadnr, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.6) # remove elev
+det.mule.step.7 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.temp + I(scale.temp^2) + conifer + scale.wadnr, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.7) # remove wadnr
+det.mule.step.8 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.temp + I(scale.temp^2) + conifer, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.8) # remove cheight^2
+det.mule.step.9 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.temp + I(scale.temp^2) + conifer, full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.9) # remove conifer
+det.mule.step.10 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.temp + I(scale.temp^2), full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.10) # remove cheight
+det.mule.step.11 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.temp + I(scale.temp^2), full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.step.11) # done!
+
+# adding pm 2.5
+det.mule.smoke <-  glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.temp + I(scale.temp^2) + scale.smoke, data = full_data.mule, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.mule.smoke) # significant AND positive! (if tiny effect size)
+```
+
+### results tables
+```{r}
+mule.det.final <- coef(summary(det.mule.smoke)) %>%
+  as_tibble() 
+
+rows1 <- c("Intercept", "Days", "Days^2", "Temperature", "Temperature^2", "PM 2.5")
+mule.det.final <- mule.det.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+
+write_csv(mule.det.final, here("results", "mule-pois.txt"))
+```
+
+### Predictions for figure
+-inspired by https://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#lme4
+```{r}
+fm1 <- det.mule.smoke
+summary(fm1)
+
+newdat <- expand.grid(scale.smoke = seq(-1, 13, by=0.1), scale.days = 0, `I(scale.days^2)` = 0, scale.temp = 0, `I(scale.temp^2)` = 0) 
+
+newdat$delta_times_pics <- predict(fm1,newdat,re.form=NA) 
+mm <- model.matrix(terms(fm1),newdat)
+
+
+pvar1 <- diag(mm %*% tcrossprod(vcov(fm1),mm))
+cmult <- 1.96 
+
+newdat <- data.frame(
+    newdat
+    , plo = newdat$delta_times_pics-cmult*sqrt(pvar1)
+    , phi = newdat$delta_times_pics+cmult*sqrt(pvar1)
+) %>%
+  mutate(smoke.cats = as.character(scale.smoke)) %>% 
+  group_by(smoke.cats) %>%
+  mutate(est = mean(delta_times_pics), lb = mean(plo), ub = mean(phi), Species = "mule") %>%
+  distinct(smoke.cats, .keep_all = T) %>%
+  ungroup() %>%
+  select(scale.smoke, lb, est, ub, Species)
+
+ggplot(newdat, aes(y = est, x = scale.smoke)) + 
+  geom_line(size = 1.5) + 
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .3, linetype = 0) +
+  theme_minimal() 
+
+# write data
+write_csv(newdat, here("results", "mule-pois-predictions.csv"))
+```

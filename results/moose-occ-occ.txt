@@ -1,0 +1,5 @@
+term,Estimate,SE,z,P(>|z|)
+Intercept,-0.203,0.184,-1.103,0.27
+Elevation,0.981,0.188,5.228,0
+Elevation^2,-0.469,0.149,-3.144,0.002
+Distance to road,-0.742,0.221,-3.355,0.001

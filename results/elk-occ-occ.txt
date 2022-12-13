@@ -1,0 +1,5 @@
+term,Estimate,SE,z,P(>|z|)
+Intercept,-0.739,0.213,-3.474,0.001
+Habitat type (other),-1.464,0.387,-3.783,0
+Elevation,-1.118,0.32,-3.492,0
+Elevation^2,-0.853,0.353,-2.419,0.016

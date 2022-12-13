@@ -1,0 +1,5 @@
+term,Estimate,Std. Error,z value,Pr(>|z|)
+Intercept,-4.904,0.167,-29.371,0
+Road type (trail),-0.987,0.214,-4.617,0
+Habitat type (other),-0.684,0.228,-2.993,0.003
+PM 2.5,-0.005,0.057,-0.08,0.936

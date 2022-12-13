@@ -1,0 +1,10 @@
+term,Estimate,Std. Error,z value,Pr(>|z|)
+Intercept,-2.865,0.175,-16.351,0
+Days,-0.148,0.026,-5.611,0
+Distance to linear feature,-0.057,0.103,-0.557,0.578
+Distance to linear feature^2,0.135,0.067,2.012,0.044
+Temperature,-0.103,0.026,-3.931,0
+Temperature^2,0.031,0.012,2.563,0.01
+Elevation,-1.636,0.271,-6.042,0
+Elevation^2,-0.581,0.295,-1.972,0.049
+PM 2.5,-0.018,0.018,-1.036,0.3

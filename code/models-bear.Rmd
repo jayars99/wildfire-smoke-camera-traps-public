@@ -1,0 +1,199 @@
+---
+title: "Reproducible code for black bear occupancy and Poisson model selection"
+author: "Jessalyn Ayars"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(unmarked)
+library(here)
+library(lme4)
+select <- dplyr::select
+```
+
+
+## Occupancy modeling
+
+## Load data and covariates
+```{r}
+sitecovs <- read_csv(here("data-tidy", 'covs-site.csv'))
+scale.smoke <- read.table(here("data-tidy", "covs-obs-smoke-scaled.csv")) %>%
+  as.matrix()
+scale.days <- read.table(here("data-tidy",'covs-obs-day-scaled.csv')) %>%
+  as.matrix() 
+scale.temp <- read.table(here("data-tidy",'covs-obs-temp-scaled.csv')) %>%
+  as.matrix()
+bear_detections <- read.table(here("data-tidy", "dh-bear.csv")) %>% as.matrix()
+```
+
+### Construct model frame
+```{r}
+bear.umf <- unmarkedFrameOccu(y = bear_detections, siteCovs = sitecovs, obsCovs = list(scale.days = scale.days, scale.smoke = scale.smoke, scale.temp = scale.temp))
+```
+
+### Occupancy model selection
+- missing 10 sites and 'some' observations
+```{r}
+# new code to do stepwise backwards selection
+det.covs=c("scale.days", "I(scale.days^2)", "Road_Type", "scale.cheight", "I(scale.cheight^2)", "scale.dtr", "I(scale.dtr^2)", "scale.temp", "I(scale.temp^2)") 
+occ.covs=c("conifer", "landmg2", "scale.elev", "I(scale.elev^2)", "scale.wadnr", "I(scale.wadnr^2)")
+
+det.list=paste(det.covs, collapse="+")  
+occ.list=paste(occ.covs, collapse="+")
+form=as.formula(paste("~",det.list, "~", occ.list))   #this creates a formula that unmarked understands
+
+bear.step <- occu(formula = form, bear.umf, method = "L-BFGS-B")
+
+#first for detection covariates
+while(max(summary(bear.step)[[2]][-1,4]) > 0.05){
+  det.remove=which(summary(bear.step)[[2]][,4] == max(summary(bear.step)[[2]][-1,4])) - 1  #not including the intercept, so -1
+  if ((det.covs[det.remove] == "scale.days" & "I(scale.days^2)" %in% det.covs) |
+      (det.covs[det.remove] == "scale.cheight" & "I(scale.cheight^2)" %in% det.covs) |
+      (det.covs[det.remove] == "scale.dtr" & "I(scale.dtr^2)" %in% det.covs) |
+      (det.covs[det.remove] == "scale.temp" & "I(scale.temp^2)" %in% det.covs)) {
+    break
+  }
+  det.covs = det.covs[-det.remove]    
+  det.list=paste(det.covs, collapse="+")
+  form=as.formula(paste("~",det.list, "~", occ.list))
+  bear.step <- occu(formula = form, bear.umf, method = "L-BFGS-B")
+}
+summary(bear.step) # now drop dtr^2
+bear.step.1 <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.dtr + scale.temp ~ conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + I(scale.wadnr^2), bear.umf, method = "L-BFGS-B")
+summary(bear.step.1) # drop dtr
+bear.step.2 <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.temp ~ conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + I(scale.wadnr^2), bear.umf, method = "L-BFGS-B")
+summary(bear.step.2)
+det.list = "scale.days+I(scale.days^2)+Road_Type+scale.cheight+scale.temp"
+
+#now for occupancy 
+while(max(summary(bear.step.2)[[1]][-1,4]) > 0.05){
+  occ.remove=which(summary(bear.step.2)[[1]][,4] == max(summary(bear.step.2)[[1]][-1,4])) - 1  
+  if ((occ.covs[occ.remove] == "scale.elev" & "I(scale.elev^2)" %in% occ.covs) |
+      (occ.covs[occ.remove] == "scale.wadnr" & "I(scale.wadnr^2)" %in% occ.covs)) {
+    break
+  }  
+  occ.covs = occ.covs[-occ.remove]
+  occ.list=paste(occ.covs, collapse="+")
+  form=as.formula(paste("~",det.list, "~", occ.list))
+  bear.step.2 <- occu(formula = form, bear.umf, method = "L-BFGS-B")
+}
+summary(bear.step.2) # drop wadnr^2
+bear.step.3 <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.temp 
+                    ~ conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr, bear.umf, method = "L-BFGS-B")
+summary(bear.step.3) # drop wadnr
+bear.step.4 <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.temp 
+                    ~ conifer + landmg2 + scale.elev + I(scale.elev^2), bear.umf, method = "L-BFGS-B")
+summary(bear.step.4) # drop land mg
+bear.step.5 <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.temp 
+                    ~ conifer + scale.elev + I(scale.elev^2), bear.umf, method = "L-BFGS-B")
+summary(bear.step.5) # drop conifer
+bear.step.6 <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.temp 
+                    ~ scale.elev + I(scale.elev^2), bear.umf, method = "L-BFGS-B")
+summary(bear.step.6)
+
+
+bear.smoke <- occu(~scale.days + I(scale.days^2) + Road_Type + scale.cheight + scale.temp + scale.smoke 
+                   ~ scale.elev + I(scale.elev^2), bear.umf, method = "L-BFGS-B")
+summary(bear.smoke) # not sig
+```
+
+### Results tables
+```{r}
+# detection
+bear.occ.det.final <- tibble(summary(bear.smoke)$det)
+rows1 <- c("Intercept", "Days", "Days^2", "Road type", "Camera height", "Temperature", "PM 2.5")
+bear.occ.det.final <- bear.occ.det.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+write_csv(bear.occ.det.final, here("results", "bear-occ-det.txt"))
+
+# occupancy
+bear.occ.occ.final <- tibble(summary(bear.smoke)$state)
+rows1 <- c("Intercept", "Elevation", "Elevation^2")
+bear.occ.occ.final <- bear.occ.occ.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+write_csv(bear.occ.occ.final, here("results", "bear-occ-occ.txt"))
+```
+
+## Poisson regression
+### data
+```{r}
+full_data.bears <- read_csv(here("data-tidy", "poisson-data-bear.csv"))
+```
+ 
+### model selection
+```{r}
+# backward stepwise selection
+covs=c("scale.days", "I(scale.days^2)", "Road_Type", "scale.cheight", "I(scale.cheight^2)", "scale.dtr", "I(scale.dtr^2)", "scale.temp", "I(scale.temp^2)", "conifer", "landmg2", "scale.elev", "I(scale.elev^2)", "scale.wadnr", "I(scale.wadnr^2)")
+
+covs.list = paste(covs, collapse="+")  
+form = as.formula(paste("delta_times_pics ~ (1|Cell_ID) +",covs.list))
+
+det.bear.step <- glmer(formula = form, full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+
+while(max(summary(det.bear.step)$coefficients[-1,4]) > 0.05){
+  remove=which(summary(det.bear.step)$coefficients[-1,4] == max(summary(det.bear.step)$coefficients[-1,4]))
+  if ((covs[remove] == "scale.days" & "I(scale.days^2)" %in% covs) |
+      (covs[remove] == "scale.cheight" & "I(scale.cheight^2)" %in% covs) |
+      (covs[remove] == "scale.dtr" & "I(scale.dtr^2)" %in% covs) |
+      (covs[remove] == "scale.temp" & "I(scale.temp^2)" %in% covs) |
+      (covs[remove] == "scale.elev" & "I(scale.elev^2)" %in% covs) |
+      (covs[remove] == "scale.wadnr" & "I(scale.wadnr^2)" %in% covs)) {
+    break
+  }  
+  covs = covs[-remove]
+  if(length(covs) > 0) {
+    covs.list = paste(covs, collapse="+")
+    form = as.formula(paste("delta_times_pics ~ (1|Cell_ID) +", covs.list))}
+  else {
+   form = as.formula("delta_times_pics ~ (1|Cell_ID)") 
+  }
+  det.bear.step <- glmer(formula = form, full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+}
+summary(det.bear.step) # from here: drop dtr^2
+det.bear.step.1 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.cheight + scale.dtr + 
+    scale.temp + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + 
+    I(scale.wadnr^2), data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.1) # failed to converge: drop wadnr^2 (2nd worst previously) and see if it resolves?
+det.bear.step.2 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.cheight + scale.dtr + 
+    scale.temp + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr, data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.2) # drop wadnr
+det.bear.step.3 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.cheight + scale.dtr + 
+    scale.temp + landmg2 + scale.elev + I(scale.elev^2), data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.3) # drop cheight
+det.bear.step.4 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.dtr + scale.temp + landmg2 + scale.elev + I(scale.elev^2), data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.4) # drop dtr
+det.bear.step.5 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.temp + landmg2 + scale.elev + I(scale.elev^2), data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.5) # drop temp
+det.bear.step.6 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + Road_Type + landmg2 + scale.elev + I(scale.elev^2), data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.6) # drop landmg
+det.bear.step.7 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + Road_Type + scale.elev + I(scale.elev^2), data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.step.7)
+
+# adding pm 2.5
+det.bear.smoke <-  glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + 
+    Road_Type + scale.elev + I(scale.elev^2) + scale.smoke, data = full_data.bears, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.bear.smoke) # not significant 
+```
+
+### results tables
+```{r}
+bear.det.final <- coef(summary(det.bear.smoke)) %>%
+  as_tibble() 
+
+rows1 <- c("Intercept", "Days", "Days^2", "Road type (trail)", "Elevation", "Elevation^2", "PM 2.5")
+bear.det.final <- bear.det.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+
+write_csv(bear.det.final, here("results", "bear-pois.txt"))
+```
+

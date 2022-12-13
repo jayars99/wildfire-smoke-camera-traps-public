@@ -1,0 +1,439 @@
+---
+title: "Universal covariates"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Note: as the coordinates of camera traps are sensitive data, the datasets needed to run this code are not publicly available. Complete data are available to qualified researchers from the Wildlife Chief Scientist of the Washington Department of Fish and Wildlife by contacting (360)-902-2515. This information is provided for clarity on decisions we made for covariate cleaning and use.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(camtrapR) 
+library(tidyverse)
+library(lubridate)
+library(sf)
+library(raster)
+library(sp)
+library(unmarked)
+library(here)
+select <- dplyr::select
+```
+
+
+## Station data
+```{r}
+stations_ok <- read_csv(here("data", "OK_Camera_Stations_18-19.csv")) %>% rename(Problem2_to = Problem2_from...10, Problem2_from = Problem2_from...9)
+stations_ne <- read_csv(here("data","NE_Camera_Stations_18-19_v2.csv"))
+stations <- rbind(stations_ne, stations_ok)
+stations <- stations %>% mutate(CameraLocation=paste(Cell_ID, Camera_ID, sep="_")) %>% relocate(CameraLocation, .after="Camera_ID") %>% mutate(Cell_ID=recode_factor(Cell_ID, "NE2048a" = "NE2048", "NE2048b" = "NE2048", "NE5345a" = "NE5345", "NE5345b" = "NE5345"))
+stations_1920 <- read_csv(here("data","All_Camera_Stations_19-20.csv"))
+stations_1920$Notes <- NA
+stations_2021 <- read_csv(here("data","All_Camera_Stations_20-21.csv"))
+stations_2021$Notes <- NA
+stations <- rbind(stations, stations_1920, stations_2021)
+stations_temp <- stations %>%
+  transmute(
+    Cell_ID = as.factor(as.character(Cell_ID)),
+    Camera_ID = as.character(Camera_ID), 
+    UTM_X = Longitude,
+    UTM_Y = Latitude,
+    Setup_date = as.character(mdy(Setup_date)),
+    Retrieval_date = as.character(mdy(Retrieval_date)),
+    Problem1_from = as.character(mdy(Problem1_from)),
+    Problem1_to = as.character(mdy(Problem1_to)),
+    Problem2_from = as.character(mdy(Problem2_from)),
+    Problem2_to = as.character(mdy(Problem2_to))
+  ) 
+stations2 <-  stations_temp %>% 
+  filter(Cell_ID != "OK3667" | Camera_ID != 92 | !is.na(Problem1_from)) %>%
+  dplyr::select(-Problem2_from, -Problem2_to)
+
+# removing problem cameras
+a <- which(stations2$Cell_ID == "OK2749" & stations2$Setup_date == "2018-07-08")
+b <- which(stations2$Cell_ID == "OK7658" & stations2$Setup_date == "2018-08-22")
+stations2 <- stations2[-c(a,b),]
+
+c <- which(stations2$Cell_ID == "OK1474" & stations2$Setup_date == "2018-10-23")
+stations2 <- stations2[-c,] %>%
+  filter(Cell_ID != "NE2897", Cell_ID != "NE2899") 
+
+stations2$CameraLocation <- paste(stations2$Cell_ID, stations2$Camera_ID, sep="_")
+stations2$Year <- ifelse(year(stations2$Setup_date)==2018, 2018, ifelse(year(stations2$Setup_date)==2019, 2019, 2020))
+stations2 <- stations2 %>% arrange(Year, CameraLocation)
+```
+
+
+## Extracting covariates
+
+- double checking since Sarah B. had site covariates retained in her models: only issue could be different dataset versions
+```{r, include = FALSE}
+NE <-raster(here("data", "NE_DEM.img"))
+NE@crs
+OK <- raster(here("data", "MW_DEM.img"))
+OK@crs
+DEM <- merge(NE, OK)
+
+##Camera Station Locations
+cams_1819_NE <- read.csv(here("data", "NE_Camera_Stations_18-19_v2.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = 2018)
+cams_1819_OK <- read.csv(here("data", "OK_Camera_Stations_18-19.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = 2018) %>%
+  rename("Problem2_to" = "Problem2_from.1")
+cams.18 <- rbind(cams_1819_NE, cams_1819_OK) %>%
+  rename("Set_date"="Setup_date", "Pull_date"="Retrieval_date", "Problem1_f"="Problem1_from", "Problem1_t"="Problem1_to", "Problem2_f"="Problem2_from", "Problem2_t"="Problem2_to") %>%
+  mutate(CameraLocation = paste(Cell_ID, Camera_ID, sep="_")) %>%
+  relocate(CameraLocation, .after=Camera_ID) %>%
+  select(-Notes)
+cams.19 <- read_csv(here("data","All_Camera_Stations_19-20.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = 2019) %>%
+  rename("Set_date"="Setup_date", "Pull_date"="Retrieval_date", "Problem1_f"="Problem1_from", "Problem1_t"="Problem1_to", "Problem2_f"="Problem2_from", "Problem2_t"="Problem2_to")
+cams.20 <- read_csv(here("data","All_Camera_Stations_20-21.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = 2020) %>%
+  rename("Set_date"="Setup_date", "Pull_date"="Retrieval_date", "Problem1_f"="Problem1_from", "Problem1_t"="Problem1_to", "Problem2_f"="Problem2_from", "Problem2_t"="Problem2_to")
+
+covs <- rbind(cams.18, cams.19, cams.20) %>%
+  dplyr::select(Cell_ID, Camera_ID, Year, geometry) %>%
+  st_transform("+proj=lcc +lat_0=45.3333333333333 +lon_0=-120.5 +lat_1=45.8333333333333 +lat_2=47.3333333333333 +x_0=500000 +y_0=0
++ellps=GRS80 +units=m +no_defs") # to match DEM projection, not strictly necessary
+
+# Extract the elevation (in meters) of each camera location
+covs <- covs %>%
+  mutate(elev = extract(DEM, covs))
+
+# Landcover database
+nlcd <- raster(here("data", "nlcd_wa_utm10.tif"))
+
+# Extract the national land cover type at each camera location
+covs <- covs %>%
+  mutate(landcover = extract(nlcd, covs)) # automatically transforms covs to crs of nlcd
+
+# distance to major roads from WADNR 
+roads_ne <- st_read(here("data",'WADNR_Active_Roads_NE.shp'))
+roads_ok <- st_read(here("data","WADNR_Active_Roads_OK.shp"))
+roads <- rbind(roads_ne, roads_ok) # just taking distance from this I believe
+roads <- roads %>% st_transform("+proj=lcc +lat_1=45.83333333333334 +lat_2=47.33333333333334
+                                   +lat_0=45.33333333333334 +lon_0=-120.5 +x_0=500000 +y_0=0 +ellps=GRS80
+                                   +units=m +no_defs")
+closestRoad <- st_nearest_feature(covs, roads)
+covs.2 <- covs %>% mutate(wadnr = NA) # distance is in meters 
+
+for(i in 1:nrow(covs.2)) {
+  covs.2$wadnr[i] = st_distance(covs.2$geometry[i], roads$geometry[closestRoad[i]])
+} 
+
+# other covariates 
+cam.data <- read.csv(here("data","Camera_Station18-21_Covariates_2022-04-06.csv")) %>%
+  mutate(Habitat_Type = as.factor(Habitat_Type), .keep = "unused") %>%
+  mutate(Distance_to_Road = Distance_Focal_Point, .keep = "unused") %>% # distance to linear feature
+  mutate(Cam_Height = Height_frm_grnd, .keep = "unused") %>%
+  mutate(Road_Type = as.factor(Monitoring), .keep = "unused") %>%
+  mutate(Canopy = Canopy_Cov, .keep = "unused") %>%
+  mutate(Land_Mgnt = recode_factor(Land_Mgnt, "Federal" = "Public",
+                            "State" = "Public",
+                            "Private" = "Private"), .keep = "unused") %>%
+  mutate(Year = ifelse(Year == "Year1", 2018, ifelse(Year == "Year2", 2019, 2020)))
+  
+# Add camera covariate data to covariates
+# Fixes for renaming cells
+covs.2$Cell_ID[covs.2$Cell_ID %in% c("NE2048a", "NE2048b")] <- "NE2048"
+covs.2$Cell_ID[covs.2$Cell_ID %in% c("NE5345a", "NE5345b")] <- "NE5345"
+covs.3 <- left_join(covs.2, cam.data, by=c("Cell_ID", "Year", "Camera_ID")) 
+
+# Duplicates
+duplicated_sites <- covs.3$Cell_ID[which(duplicated(covs.3$Cell_ID))]
+covs.3 <- covs.3[-which(duplicated(covs.3$CameraLocation) & covs.3$Cell_ID=="NE5920"),]
+```
+
+
+### finalize site covariates/camera stations
+```{r}
+sitecovs <- covs.3 %>% arrange(Cell_ID) %>% dplyr::select("Cell_ID", "Camera_ID", "Year", "landcover", "Habitat_Type", "Road_Type", "Land_Mgnt", "elev", "Cam_Height", "Distance_to_Road", 'wadnr')%>% 
+  mutate(Habitat_Type = recode_factor(Habitat_Type, "Mixed conifer" = "mixed conifer")) %>%
+  mutate(Road_Type = recode_factor(Road_Type, "Decommissioned road" = "road", "Dirt road" = "road", "Game trail" = "trail", "Closed road" = "road", "Trail" = "trail")) %>%
+  mutate(conifer = recode_factor(Habitat_Type, "mixed conifer" = "conifer", "Burned" = "other", "Grassland" = "other",  "Shrub-steppe" = "other", "Agriculture" = "other", "Riparian" = "other")) %>% 
+  mutate(scale.elev = (elev - mean(elev)) / sd(elev)) %>%
+  mutate(scale.dtr = (Distance_to_Road - mean(Distance_to_Road, na.rm = T))/sd(Distance_to_Road, na.rm = T))%>%
+  mutate(scale.cheight = (Cam_Height -mean(Cam_Height, na.rm = T))/sd(Cam_Height, na.rm = T)) %>%
+  mutate(scale.wadnr = (wadnr-mean(wadnr, na.rm = T))/sd(wadnr, na.rm = T)) %>%
+  mutate(landmg2 = recode_factor(Land_Mgnt, "public" = "public",
+                                 "private" = "private")) %>%
+  # removing sites with missing covariates
+  drop_na(conifer, landmg2, scale.elev, scale.wadnr, Road_Type, scale.cheight, scale.dtr)
+
+sitecovs$conifer[which(sitecovs$conifer=="")] <- "other"
+sitecovs$conifer <- droplevels(sitecovs$conifer)
+sitecovs$CameraLocation <- paste(sitecovs$Cell_ID, sitecovs$Camera_ID, sep="_")
+
+# only ones which are in stations2
+sitecovs.2 <- semi_join(sitecovs, stations2, by = c("Cell_ID", "Camera_ID", "Year")) 
+
+# removing duplicates/missing sitecovs
+sitecovs.2 %>%
+  group_by(Cell_ID, Camera_ID, Year) %>%
+  mutate(how.many = n()) %>%
+  distinct(Cell_ID, Camera_ID, Year, how.many) %>%
+  filter(how.many > 1)
+
+issues <- which(sitecovs.2$CameraLocation %in% c("OK2749_59", "OK3667_92", "OK7658_43") & duplicated(sitecovs.2$CameraLocation)) 
+issues <- c(issues, which(sitecovs.2$Cell_ID=="OK1790" & sitecovs.2$Year == 2019))
+
+sitecovs.2 <- sitecovs.2[-issues,]
+missing <- anti_join(stations2, sitecovs.2, by = c("Cell_ID", "Camera_ID", "Year"))
+
+stations.2 <- semi_join(stations2, sitecovs.2, by = c("Cell_ID", "Camera_ID", "Year"))
+
+write_csv(sitecovs.2, here("data",'tidy_covs.csv'))
+sitecovs.2 <- read_csv(here("data","tidy_covs.csv"))
+
+write_csv(stations.2, here("data",'stationsTbl.csv'))
+stations.2 <- read_csv(here("data",'stationsTbl.csv'))
+
+stations.2.scrubbed <- stations.2 %>%
+  dplyr::select(-UTM_X, -UTM_Y)
+
+write_csv(stations.2.scrubbed, here("data-tidy", "stationsTbl.csv"))
+```
+
+
+## Observational covariates
+
+### smoke-based pm 2.5
+```{r}
+# data
+smoke.2018 <- read_csv(here("data", "smoke_pm_2_5_2018.csv")) %>%
+  mutate(Year = 2018)
+smoke.2019 <- read_csv(here("data", "smoke_pm_2_5_2019.csv")) %>% 
+  mutate(Camera_ID = as.character(Camera_ID)) %>%
+  mutate(Year = 2019)
+smoke.2020 <- read_csv(here("data", "smoke_pm_2_5_2020.csv")) %>%
+  mutate(Year = 2020)
+
+# rename to not have year
+smoke.2018.2 <- smoke.2018 %>%
+  rename_with(~ str_sub(.x, 6, 10), starts_with("20"))
+smoke.2019.2 <- smoke.2019 %>%
+  rename_with(~ str_sub(.x, 6, 10), starts_with("20"))
+smoke.2020.2 <- smoke.2020 %>%
+  rename_with(~ str_sub(.x, 6, 10), starts_with("20"))
+
+# select date range + add blank columns for missing dates
+smoke.2018.dates <- smoke.2018.2 %>%
+  select("07-01":"10-30", Camera_ID, Year, .geo) %>%
+  mutate(`10-31` = NA) %>% relocate(`10-31`, .after = "10-30") %>%
+  mutate(`10-10` = NA) %>% relocate(`10-10`, .after = "10-09")
+
+smoke.2019.dates <- smoke.2019.2 %>%
+  select("07-01":"10-30", Camera_ID, Year, .geo) %>%
+  mutate(`07-05` = NA) %>% relocate(`07-05`, .after = "07-04") %>%
+  mutate(`07-06` = NA) %>% relocate(`07-06`, .after = "07-05") %>%
+  mutate(`07-07` = NA) %>% relocate(`07-07`, .after = "07-06") %>%
+  mutate(`07-12` = NA) %>% relocate(`07-12`, .after = "07-11") %>%
+  mutate(`07-17` = NA) %>% relocate(`07-17`, .after = "07-16") %>%
+  mutate(`08-02` = NA) %>% relocate(`08-02`, .after = "08-01") %>%
+  mutate(`09-11` = NA) %>% relocate(`09-11`, .after = "09-10") %>%
+  mutate(`09-12` = NA) %>% relocate(`09-12`, .after = "09-11") %>%
+  mutate(`10-18` = NA) %>% relocate(`10-17`, .after = "10-16") %>%
+  mutate(`10-31` = NA) %>% relocate(`10-31`, .after = "10-30")
+
+smoke.2020.dates <- smoke.2020.2 %>%
+  dplyr::select("07-01":"10-31", Camera_ID, Year, .geo) %>%
+  mutate(`07-23` = NA) %>% relocate(`07-23`, .after = "07-22") %>%
+  mutate(`07-29` = NA) %>% relocate(`07-29`, .after = "07-28") %>%
+  mutate(`07-30` = NA) %>% relocate(`07-30`, .after = "07-29")
+
+# together
+smoke.all <- rbind(smoke.2018.dates, smoke.2019.dates, smoke.2020.dates)
+
+# bind to stations2 to compare location data for duplicated entries
+smoke.weird <- left_join(stations.2, smoke.all, by = c("Camera_ID", "Year")) %>%
+  filter((Camera_ID == 59 & Year == 2020) | 
+           Camera_ID == 89 & Year == 2020 |
+           Camera_ID == 96 & Year == 2019) %>%
+  arrange(Camera_ID)
+
+smoke.okay <- left_join(stations.2, smoke.all, by = c("Camera_ID", "Year")) %>%
+  anti_join(smoke.weird, by = c("Camera_ID", "Year"))
+
+smoke.weird.2 <- smoke.weird %>%
+  select(Year, Cell_ID, Camera_ID, UTM_X, UTM_Y, .geo)
+# 1, 4, 5, 8, 9, 12 match by location
+
+smoke.weird.keep <- smoke.weird[c(1, 4, 5, 8, 9, 12),]
+
+smoke.fixed <- rbind(smoke.okay, smoke.weird.keep)
+
+# order according to sitecovs, which is what the other ones are ordered by
+smoke.ordered <- left_join(sitecovs.2, smoke.fixed, by = c("Cell_ID", "Camera_ID", "Year"))
+
+smoke.final <- smoke.ordered %>%
+  as_tibble() %>%
+  select("07-01":"10-31") %>%
+  as.matrix()
+
+# describe before removing outliers
+smoke.megalist <- smoke.final %>% c() %>% unlist()
+summary(smoke.megalist)
+m <- mean(smoke.megalist, na.rm = T) #7.432
+s <- sd(smoke.megalist, na.rm = T) # 41.521
+
+cutoff <- quantile(smoke.megalist, 0.999, na.rm = T) # 267.905
+smoke.final.2 <- as.matrix(smoke.final)
+remove <- which(smoke.final.2 > 267.7699) # not row,col format
+
+smoke.final.cutoff <- smoke.final.2
+smoke.final.cutoff[remove] <- NA
+
+# describe after removing outliers (modeling data set)
+smoke.megalist.2 <- smoke.final.cutoff %>% c() %>% unlist()
+summary(smoke.megalist.2)
+m <- mean(smoke.megalist.2, na.rm = T) # 6.597
+s <- sd(smoke.megalist.2, na.rm = T) # 21.247
+
+smoke.scaled <- smoke.final.cutoff %>%
+  as_tibble() %>%
+  mutate(across(where(is.numeric), ~ (.x - m)/s)) %>%
+  as.matrix()
+
+# save
+write.table(smoke.scaled, here("data", "scaled_smoke_matrix.csv"))
+write.table(smoke.final, here("data", "raw_smoke_matrix.csv"))
+```
+
+
+### adding temperature locations
+
+```{r new_temperature_processing}
+temptemp <- read_csv(here("data","WPPP_weather_land_canopy_roads_sunrise_PM2.5.csv")) 
+study_interval1 <- interval(ymd("2018-07-01"), ymd("2018-10-31")) 
+study_interval2 <- interval(ymd("2019-07-01"), ymd("2019-10-31")) 
+study_interval3 <- interval(ymd("2020-07-01"), ymd("2020-10-31")) 
+
+temp1 <- temptemp %>% 
+  mutate(Obs_Date = Observation_Date, Air_Temperature_K=Daily_Mean_Air_Temperature.K., Precipitation_mm=Daily_Accumulated_Precipitation.mm.) %>%
+  mutate(CameraLocation=Camera_Location) %>%
+  filter(Obs_Date %within% study_interval1 | Obs_Date %within% study_interval2 | Obs_Date %within% study_interval3) %>%
+  dplyr::select(Cell_ID, Camera_ID, CameraLocation, Year, Obs_Date, Air_Temperature_K, Precipitation_mm) %>%
+  mutate(temp.k.scaled = scale(Air_Temperature_K)) %>%
+  mutate(precip.mm.scaled = scale(Precipitation_mm)) %>%
+  mutate(Year = ifelse(Year == "Year1", 2018, ifelse(Year == "Year2", 2019, 2020)))
+
+temp_matrix <- matrix(nrow = nrow(sitecovs.2), ncol = 123)
+temp_matrix.scaled <- matrix(nrow = nrow(sitecovs.2), ncol = 123)
+for(i in 1:nrow(temp_matrix)){ 
+  for (j in 1:(ncol(temp_matrix))) { 
+    temp_date <- c(ymd("2018-06-30") + days(j), ymd("2019-06-30") + days(j), ymd("2020-06-30") + days(j))
+    b = which(temp1$Obs_Date %in% temp_date & temp1$Cell_ID == sitecovs.2$Cell_ID[i] & temp1$Year == sitecovs.2$Year[i])
+    b = min(b) 
+    if (is.finite(b)) { 
+      temp_matrix[i,j] = temp1$Air_Temperature_K[b]
+      temp_matrix.scaled[i,j] = temp1$temp.k.scaled[b]
+    } 
+  }
+} 
+
+temp_missing_rows <- unique(which(is.na(temp_matrix), arr.ind=T)[,1])
+
+write.table(temp_matrix, here("data", "unscaled_temp_matrix.csv"))
+write.table(temp_matrix.scaled, here("data",'scaled_temp_obs_cov.csv'))
+```
+
+### summarizing temperature and pm 2.5 conditions
+temperature:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's 
+-12.431   8.696  14.392  13.395  18.598  30.464    2876  
+super simplistic summary: just all observations from all camera traps, days, and years 
+
+pm 2.5:
+   Min.  1st Qu.   Median     Mean  3rd Qu.     Max.  
+   0.000    0.017    0.199    7.432    2.181 4213.255     1856 
+   sd = 41.521
+annual standard: 12 mug/m3, happened 11.7% of camera-days
+24 hr standard: 35 mug/m3, happened 5.5% of camera-days
+
+temperature and smoke were correlated at r = 0.099 (very not correlated)
+
+temperature above 17-24 C in 3.8 to 33.8% of CT days
+```{r}
+temp_unscaled <- read.table(here("data", "unscaled_temp_matrix.csv"))
+temp.megalist <- temp_unscaled %>%
+  c() %>%
+  unlist() %>%
+  -273.15 
+summary(temp.megalist)
+sum(temp.megalist > 24, na.rm = T)/(length(temp.megalist)-sum(is.na(temp.megalist)))
+sum(temp.megalist > 17, na.rm = T)/(length(temp.megalist)-sum(is.na(temp.megalist)))
+
+smoke_unscaled <- read.table(here("data", "raw_smoke_matrix.csv"))
+s <- smoke.final %>% as.matrix() %>% sd(na.rm = T)
+pm2.5.megalist <- smoke_unscaled %>%
+  as.matrix() %>%
+  c() 
+summary(pm2.5.megalist) # wild outliers: remove?? (yes, did)
+hist(pm2.5.megalist)  
+sum(pm2.5.megalist > 12, na.rm = T)/(length(pm2.5.megalist)-sum(is.na(pm2.5.megalist)))
+sum(pm2.5.megalist > 35, na.rm = T)/(length(pm2.5.megalist)-sum(is.na(pm2.5.megalist)))
+sum(pm2.5.megalist > 100, na.rm = T)/(length(pm2.5.megalist)-sum(is.na(pm2.5.megalist)))
+
+temp <- temp_unscaled %>% as.matrix()
+smoke <- smoke_unscaled  %>% as.matrix()
+temp[which(is.na(smoke))] <- NA 
+smoke[which(is.na(temp))] <- NA 
+cor(na.omit(as.vector(temp)), na.omit(as.vector(smoke)))
+```
+
+
+### days
+```{r}
+#  number of camera sites
+R <- nrow(sitecovs.2)
+#  total number of days in season of interest
+D <- 123
+
+date.vector <- rep(c(1:D))
+date.vector.scaled <- (date.vector - mean(date.vector))/sd(date.vector)
+days <- matrix(rep(c(1:D), R), ncol = D, nrow = R, byrow = T)
+scale.days <- matrix(rep(date.vector.scaled, R), ncol = D, byrow = T)
+
+write.table(scale.days, here("data",'scaledDaysObsCov.csv'))
+scale.days <- read.table(here("data",'scaledDaysObsCov.csv'))
+```
+
+### among datasets
+```{r}
+sitecovs.2 <- read_csv(here("data","tidy_covs.csv")) %>% select(-geometry)
+temp_scaled.2 <- read.table(here("data",'scaled_temp_obs_cov.csv')) %>% as.matrix()
+days_scaled.2 <- read.table(here("data",'scaledDaysObsCov.csv')) %>% as.matrix()
+smoke_scaled.2 <- read.table(here("data", "scaled_smoke_matrix.csv")) %>% as.matrix()
+smoke_unscaled <- read.table(here("data", "raw_smoke_matrix.csv")) %>% as.matrix()
+
+# aligning data: need to all have the same number of sites as sitecovs
+nrow(sitecovs.2)
+nrow(temp_scaled.2)
+nrow(days_scaled.2)
+nrow(smoke_scaled.2)
+
+detection_history_order <- order(sitecovs.2$Year, sitecovs.2$CameraLocation) # creating new order
+sitecovs.2 <- sitecovs.2[detection_history_order,]
+smoke_scaled.2 <- smoke_scaled.2[detection_history_order,] # these were ordered by sitecovs originally
+temp_scaled.2 <- temp_scaled.2[detection_history_order,]
+smoke_unscaled <- smoke_unscaled[detection_history_order,]
+
+## make all obs covs have the same NAs to keep sample size the same during modeling
+temp_scaled.2[which(is.na(smoke_scaled.2))] <- NA 
+smoke_scaled.2[which(is.na(temp_scaled.2))] <- NA
+days_scaled.2[which(is.na(temp_scaled.2))] <- NA
+# skipping for unscaled smoke since i'm using it for a visual only
+
+# write final bits
+write_csv(sitecovs.2, here("data-tidy", "covs-site.csv"))
+write.table(smoke_scaled.2, here("data-tidy", "covs-obs-smoke-scaled.csv"))
+write.table(days_scaled.2, here("data-tidy", "covs-obs-day-scaled.csv"))
+write.table(temp_scaled.2, here("data-tidy", "covs-obs-temp-scaled.csv"))
+write.table(smoke_unscaled, here("data", "unscaled_smoke_matrix2.csv"))
+```
+

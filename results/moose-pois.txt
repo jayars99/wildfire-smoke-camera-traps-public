@@ -1,0 +1,7 @@
+term,Estimate,Std. Error,z value,Pr(>|z|)
+Intercept,-4.887,0.262,-18.689,0
+Road type (trail),-1.548,0.318,-4.864,0
+Elevation,1.026,0.21,4.887,0
+Elevation^2,-0.483,0.169,-2.862,0.004
+Distance to road,-0.466,0.223,-2.089,0.037
+PM 2.5,-0.119,0.059,-2.024,0.043

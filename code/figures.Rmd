@@ -1,0 +1,115 @@
+  ---
+title: "Figures for use in manuscript"
+author: "Jessalyn Ayars"
+date: '2022-11-30'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(scico)
+library(here)
+select <- dplyr::select
+mycolors <- scico(4, palette = "roma") # bobcat, moose, mule deer, plus a blank so none are too light
+```
+
+# results figures
+
+## poisson figure: adapted from Olivia Sanderfoot's code
+### arrange data
+```{r}
+bobcat <- read_csv(here("results", "bobcat-pois-predictions.csv"))
+moose <- read_csv(here("results", "moose-pois-predictions.csv")) 
+mule <- read_csv(here("results", "mule-pois-predictions.csv"))  %>%
+  mutate(smoke.unscaled = 6.597 + 21.247*scale.smoke) %>% 
+  mutate(est = exp(est), lb = exp(lb), ub = exp(ub))
+
+pois.ests.small <- rbind(bobcat, moose) %>%
+  mutate(smoke.unscaled = 6.597 + 21.247*scale.smoke) %>% 
+  mutate(est = exp(est), lb = exp(lb), ub = exp(ub)) %>%
+  mutate(Species = recode_factor(as.factor(Species), "bobcat" = "Bobcat"))
+```
+
+### plot
+```{r}
+pois.plot.1 <- ggplot(pois.ests.small, aes(y = est, x = smoke.unscaled, group = Species, 
+                                   color = Species, fill = Species)) +
+  geom_line(linetype = "solid", size = 1.5, key_glyph = draw_key_rect) + 
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .3, linetype = 0) +
+  theme_bw() +
+  scale_color_manual(name = "Species", values = mycolors[c(2:3)]) +
+  scale_fill_manual(values = mycolors[c(2:3)], guide = "none") +
+  labs(x = expression(paste("Smoke-based PM"[2.5], " (", mu, "g/m"^3, ")")), y =
+         "Predicted number of detections in a day") +
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        strip.text = element_text(size = 8),
+        axis.text = element_text(size = 8))
+
+pois.plot.1
+
+tiff(here("results", "poisson-figure-bobcat-moose.tif"), res = 600, width = 6, height = 4, units = "in")
+pois.plot.1
+dev.off()
+
+tiff(here("results", "poisson-figure-muledeer.tif"), res = 600, width = 6, height = 4, units = "in")
+ggplot(mule, aes(y = est, x = smoke.unscaled, group = Species, 
+                                   color = Species, fill = Species)) +
+  geom_line(linetype = "solid", size = 1.5, key_glyph = draw_key_rect) + 
+  geom_ribbon(aes(ymin = lb, ymax = ub), alpha = .3, linetype = 0) +
+  theme_bw() +
+  scale_color_manual(name = "Species", values = mycolors[4]) +
+  scale_fill_manual(values = mycolors[4], guide = "none") +
+  labs(x = expression(paste("Smoke-based PM"[2.5], " (", mu, "g/m"^3, ")")), y =
+         "Predicted number of detections in a day") +
+  theme(axis.title.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        strip.text = element_text(size = 8),
+        axis.text = element_text(size = 8))
+dev.off()
+```
+
+## smoke-based PM 2.5 time series
+### data
+```{r}
+smoke <- read.table(here("data", "unscaled_smoke_matrix2.csv"))
+sitecovs <- read_csv(here("data-tidy", "covs-site.csv"))
+smoke.viz <- cbind(sitecovs, smoke) %>%
+  pivot_longer(cols = "X07.01":"X10.31", names_to = "fakedate", values_to = "smoke")
+
+smoke.viz.2 <- smoke.viz %>%
+  mutate(fakedate = str_c(str_sub(fakedate, start = 2, end = 3), "-", str_sub(fakedate, start = 5, end = 6))) %>%
+  group_by(fakedate, Year) %>%
+  mutate(med.smoke = median(smoke, na.rm = T)) %>% # best
+  distinct(fakedate, Year, med.smoke) %>%
+  ungroup() %>%
+  mutate(Year = as.factor(Year)) %>%
+  mutate(Year = recode_factor(Year, "Year1" = "2018", 
+                              "Year2" = "2019",
+                              "Year3" = "2020")) %>%
+  mutate(date2 = mdy(str_c(fakedate, "-1000")))
+```
+
+### visual
+```{r}
+# fancy time
+final <- ggplot(data = smoke.viz.2) + 
+  theme_bw() +
+  geom_bar(aes(date2, med.smoke), stat = "identity") +
+  facet_wrap(vars(Year)) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%b") +
+  labs(x = NULL, 
+       y = expression(paste("Median smoke-based PM"[2.5], " (", mu, "g/m"^3, ")"))) +
+  geom_hline(yintercept = 55, color = "red") +
+  theme(strip.background = element_rect(fill = "white"),
+        axis.title.y = element_text(size = 10),
+        strip.text = element_text(size = 8),
+        axis.text = element_text(size = 8))
+
+tiff(here("results", "pm25.tif"), res = 600, width = 6, height = 3, units = "in")
+final
+dev.off()
+```

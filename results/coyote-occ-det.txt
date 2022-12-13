@@ -1,0 +1,6 @@
+term,Estimate,SE,z,P(>|z|)
+Intercept,-2.597,0.038,-68.282,0
+Road type (trail),-0.301,0.055,-5.474,0
+Camera height,0.023,0.03,0.785,0.432
+Camera height^2,0.016,0.007,2.223,0.026
+PM 2.5,0.003,0.026,0.122,0.903

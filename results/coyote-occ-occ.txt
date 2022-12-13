@@ -1,0 +1,7 @@
+term,Estimate,SE,z,P(>|z|)
+Intercept,-0.092,0.191,-0.482,0.63
+Habitat type (other),0.984,0.288,3.423,0.001
+Elevation,-0.573,0.173,-3.309,0.001
+Elevation^2,0.291,0.138,2.117,0.034
+Distance to road,-0.828,0.234,-3.535,0
+Distance to road^2,0.119,0.047,2.548,0.011

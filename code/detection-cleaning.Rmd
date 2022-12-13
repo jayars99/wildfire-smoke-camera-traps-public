@@ -1,0 +1,262 @@
+---
+title: "Example detection data processing"
+author: "Jessalyn Ayars"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Note: we followed this same procedure for all species. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(camtrapR) 
+library(tidyverse)
+library(lubridate)
+library(here)
+select <- dplyr::select
+
+species <- "wtd"
+```
+
+
+## Load necessary data
+```{r}
+all_detections <- read_csv(here("data","Bassing_AllStudySpecies_2022-04-06.csv")) %>%
+  filter(CameraLocation != "NE3000_17", CameraLocation != "NE3815_28", CameraLocation != "NE5511_54", CameraLocation != "OK4880_95") %>%
+  separate(CameraLocation, c("Cell_ID", "Camera_ID"), sep = "_") %>%
+  filter(Cell_ID != "NE3109", Cell_ID != "NE2897", Cell_ID != "NE2899") %>%
+  mutate(Species = as.factor(Species)) %>%
+  mutate(Species = recode_factor(Species, "Black Bear" = "bear",
+         "Black bear" = "bear",
+         "Mule Deer" = "mule",
+         "White-tailed Deer" = "wtd",
+         "Cougar" = "cougar",
+         "Bobcat" = "bobcat",
+         "Coyote" = "coyote",
+         "Moose" = "moose",
+         "Elk" = "elk"))
+
+stations2 <- read_csv(here("data-tidy",'stationsTbl.csv'))
+```
+
+## Data Extraction
+Observation data
+```{r}
+study_interval1 <- interval(ymd("2018-07-01"), ymd("2018-10-31")) 
+study_interval2 <- interval(ymd("2019-07-01"), ymd("2019-10-31")) 
+study_interval3 <- interval(ymd("2020-07-01"), ymd("2020-10-31")) 
+ndays <- 123  
+
+data.1 <- all_detections %>% filter(Date %within% study_interval1 | Date %within% study_interval2 | Date %within% study_interval3)
+data.1$julian <- NA
+data.1$julian[year(data.1$Date)==2018] <- julian(data.1$Date[year(data.1$Date)==2018], origin=as.Date("2018-06-30"))
+data.1$julian[year(data.1$Date)==2019] <- julian(data.1$Date[year(data.1$Date)==2019], origin=as.Date("2019-06-30"))
+data.1$julian[year(data.1$Date)==2020] <- julian(data.1$Date[year(data.1$Date)==2020], origin=as.Date("2020-06-30"))
+which(is.na(data.1$julian))
+data.1$Year <- ifelse(year(data.1$Date)==2018, 2018, ifelse(year(data.1$Date)==2019, 2019, 2020))
+
+data.1$CameraLocation <- paste(data.1$Cell_ID, data.1$Camera_ID, sep="_")
+
+# write for github
+write_csv(data.1, here("data-raw", "detections.csv"))
+data.1 <- read_csv(here("data-raw", "detections.csv"))
+
+data.2 <- data.1 %>% 
+  filter(Species == species) %>%
+  mutate(Species = as.factor(Species)) %>%
+  dplyr::select(File, Cell_ID, Camera_ID, DateTime, Date, Time, Count, AF, AM, AU, OS, UNK, Species) 
+
+
+delta_times <- data.2 %>%
+  mutate(Class = "ok")%>%
+  arrange(DateTime) %>%
+  group_by(CameraLocation, Year) %>% 
+  mutate(Count2 = pmax(AF + AM + AU + OS + UNK, Count, na.rm = T))
+  
+
+i = 1
+j = 2
+while (i < nrow(delta_times) & j < nrow(delta_times)) {
+  end = delta_times$DateTime[i] + minutes(30)
+  if(delta_times$DateTime[j] < end) {
+    if(delta_times$Count2[j] > delta_times$Count2[i]) {delta_times$Count2[i] = delta_times$Count2[j]}
+    delta_times$Class[j] <- "redundant" 
+    j = j+1
+  }
+  else {
+    i = j 
+    j = j + 1
+  }
+}
+
+data.3 <- delta_times %>%
+  filter(Class != "redundant") 
+
+data.3  %>%
+  group_by(CameraLocation, Year) %>% 
+  arrange(DateTime) %>%
+  mutate(gap_time = interval(lag(DateTime), DateTime)) %>%
+  filter(int_length(gap_time)<minutes(30))
+
+bad <- anti_join(data.3, stations2, by = "Cell_ID") %>% dplyr::select(Cell_ID) %>% distinct() 
+data.4 <- anti_join(data.3, bad) %>% 
+  semi_join(stations2) 
+```
+
+## Camera Operations table
+- skip for deer
+```{r}
+# RLE added in: order by Cell_ID and Year
+stations2 <- stations2 %>% arrange(Year, CameraLocation)
+stations2_1 <- stations2 %>% filter(Year==2018)
+camop1 <-cameraOperation(CTtable=stations2_1, 
+                        stationCol= "CameraLocation",
+                        cameraCol= "Camera_ID",
+                        setupCol= "Setup_date",
+                        retrievalCol = "Retrieval_date",
+                        writecsv = F,
+                        hasProblems = T,
+                        byCamera= F, 
+                        allCamsOn = F,
+                        camerasIndependent = F,
+                        dateFormat = "%Y-%m-%d") 
+
+stations2_2 <- stations2 %>% filter(Year==2019)
+camop2 <-cameraOperation(CTtable=stations2_2, 
+                        stationCol= "CameraLocation",
+                        cameraCol= "Camera_ID",
+                        setupCol= "Setup_date",
+                        retrievalCol = "Retrieval_date",
+                        writecsv = F,
+                        hasProblems = T,
+                        byCamera= F, 
+                        allCamsOn = F,
+                        camerasIndependent = F,
+                        dateFormat = "%Y-%m-%d") 
+
+stations2_3 <- stations2 %>% filter(Year==2020)
+camop3 <-cameraOperation(CTtable=stations2_3, 
+                        stationCol= "CameraLocation",
+                        cameraCol= "Camera_ID",
+                        setupCol= "Setup_date",
+                        retrievalCol = "Retrieval_date",
+                        writecsv = F,
+                        hasProblems = T,
+                        byCamera= F, 
+                        allCamsOn = F,
+                        camerasIndependent = F,
+                        dateFormat = "%Y-%m-%d") 
+```
+
+
+## Detection History
+- skip for deer
+```{r}
+data.4_1 <- data.4 %>% filter(CameraLocation %in% stations2_1$CameraLocation)
+detections_1 <-detectionHistory(recordTable = data.4_1,
+                      camOp = camop1,
+                      stationCol = "CameraLocation", 
+                      speciesCol = "Species", 
+                      species = species, 
+                      recordDateTimeCol = "DateTime",
+                      occasionLength = 1, 
+                      day1 = "2018-06-30", 
+                      includeEffort = F, 
+                      timeZone = "US/Pacific",
+                      writecsv = F) 
+
+end <- data.frame(x = detections_1)
+bd <- end[,c(1:123)]
+detections_1 <- as.matrix.data.frame(bd)
+
+data.4_2 <- data.4 %>% filter(CameraLocation %in% stations2_2$CameraLocation)
+detections_2 <-detectionHistory(recordTable = data.4_2,
+                      camOp = camop2,
+                      stationCol = "CameraLocation", 
+                      speciesCol = "Species", 
+                      species = species, 
+                      recordDateTimeCol = "DateTime",
+                      occasionLength = 1, 
+                      day1 = "2019-06-30", 
+                      includeEffort = F, 
+                      timeZone = "US/Pacific",
+                      writecsv = F)
+
+end <- data.frame(x = detections_2)
+bd <- end[,c(1:123)]
+detections_2 <- as.matrix.data.frame(bd)
+
+data.4_3 <- data.4 %>% filter(CameraLocation %in% stations2_3$CameraLocation)
+detections_3 <-detectionHistory(recordTable = data.4_3,
+                      camOp = camop3,
+                      stationCol = "CameraLocation", 
+                      speciesCol = "Species", 
+                      species = species,
+                      recordDateTimeCol = "DateTime",
+                      occasionLength = 1,
+                      day1 = "2020-06-30", 
+                      includeEffort = F, 
+                      timeZone = "US/Pacific",
+                      writecsv = F)
+
+end <- data.frame(x = detections_3)
+bd <- end[,c(1:123)]
+detections_3 <- as.matrix.data.frame(bd)
+
+detections <- rbind(detections_1, detections_2, detections_3)
+write.table(detections, here("data-tidy", str_c("dh-", species, ".csv"))) 
+# already ordered by Year, CameraLocation like site/obs covs are
+```
+
+
+## making regression-friendly data
+```{r}
+sitecovs <- read_csv(here("data-tidy", 'covs-site.csv'))
+scale.smoke <- read.table(here("data-tidy", "covs-obs-smoke-scaled.csv")) %>%
+  as.matrix()
+scale.temp <- read.table(here("data-tidy",'covs-obs-temp-scaled.csv')) %>%
+  as.matrix()
+
+long_data <- tibble(index = 1:42927, Cell_ID = NA, CameraLocation = NA, Year = NA, julian = NA, scale.smoke = NA, scale.temp = NA)
+
+for(i in 1:nrow(sitecovs)){ 
+  for(j in 1:(max(data.4$julian))){
+    index = (i-1)*max(data.4$julian)+j
+    long_data$Cell_ID[index] <- sitecovs$Cell_ID[i]
+    long_data$CameraLocation[index] <- sitecovs$CameraLocation[i]
+    long_data$Year[index] <- sitecovs$Year[i]
+    long_data$julian[index] <- j
+    long_data$scale.temp[index] <- scale.temp[i,j]
+    long_data$scale.smoke[index] <- scale.smoke[i,j]
+    }
+} 
+long_data <- long_data %>% filter(!is.na(Cell_ID))
+
+temp_data <- data.4 %>% 
+  group_by(Date, CameraLocation, Year) %>%
+  mutate(Daily_Count = sum(Count2)) %>% 
+  mutate(delta_times_pics = n()) %>% 
+  mutate(Detected = ifelse(Daily_Count>0, 1, 0)) %>% 
+  dplyr::select(Cell_ID, CameraLocation, Date, Daily_Count, Detected, julian, delta_times_pics) %>%
+  distinct()
+
+full_data <- left_join(long_data, sitecovs) %>% left_join(temp_data) %>% 
+  select(-index) %>%
+  mutate(Daily_Count = ifelse(is.na(Daily_Count), 0, Daily_Count)) %>% 
+  mutate(Detected = ifelse(is.na(Detected), 0, Detected)) %>%
+  mutate(delta_times_pics = ifelse(is.na(delta_times_pics), 0, delta_times_pics)) %>%
+  mutate(scale.days = as.numeric(scale(julian))) %>% 
+  mutate(npp = Daily_Count/delta_times_pics) 
+
+
+if (species == "mule") {
+  full_data <- filter(full_data, str_detect(Cell_ID, "OK"))
+} 
+
+if (species == "wtd") {
+  full_data <- filter(full_data, str_detect(Cell_ID, "NE"))
+} 
+
+write_csv(full_data, here("data-tidy", str_c("poisson-data-", species, ".csv")))
+```

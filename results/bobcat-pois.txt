@@ -1,0 +1,12 @@
+term,Estimate,Std. Error,z value,Pr(>|z|)
+Intercept,-4.59,0.21,-21.9,0
+Days,-0.091,0.09,-1.011,0.312
+Days^2,-0.2,0.078,-2.551,0.011
+Road type (trail),-1.912,0.267,-7.153,0
+Distance to linear feature,-0.253,0.125,-2.024,0.043
+Distance to linear feature^2,0.227,0.077,2.95,0.003
+Temperature,-0.081,0.102,-0.79,0.43
+Temperature^2,-0.102,0.052,-1.969,0.049
+Habitat type (other),-0.859,0.276,-3.109,0.002
+Elevation,0.451,0.137,3.303,0.001
+PM 2.5,-0.138,0.075,-1.841,0.066

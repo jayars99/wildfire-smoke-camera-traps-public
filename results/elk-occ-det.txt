@@ -1,0 +1,8 @@
+term,Estimate,SE,z,P(>|z|)
+Intercept,-3.158,0.092,-34.447,0
+Camera height,0.518,0.098,5.31,0
+Camera height^2,-0.161,0.046,-3.532,0
+Distance to linear feature,0.093,0.097,0.958,0.338
+Distance to linear feature^2,-0.124,0.054,-2.299,0.021
+Temperature,0.149,0.071,2.092,0.036
+PM 2.5,0.052,0.05,1.041,0.298

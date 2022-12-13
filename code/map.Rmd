@@ -1,0 +1,115 @@
+---
+title: "Map with inset"
+author: "Jessalyn Ayars"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(readr)
+library(sf)
+library(raster)
+library(cowplot)
+library(ggplot2)
+library(spData)
+library(ggsn)
+library(here)
+```
+
+### Data organization
+```{r}
+# washington state object
+wa <- filter(us_states, NAME == "Washington") %>%
+  st_transform(26910)
+
+# camera traps locations 
+cams_1819_NE <- read.csv(here("data", "NE_Camera_Stations_18-19_v2.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = "2018")
+cams_1819_OK <- read.csv(here("data", "OK_Camera_Stations_18-19.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = "2018") %>%
+  rename("Problem2_to" = "Problem2_from.1")
+cams.18 <- rbind(cams_1819_NE, cams_1819_OK) %>%
+  rename("Set_date"="Setup_date", "Pull_date"="Retrieval_date", "Problem1_f"="Problem1_from", "Problem1_t"="Problem1_to", "Problem2_f"="Problem2_from", "Problem2_t"="Problem2_to") %>%
+  mutate(CameraLocation = paste(Cell_ID, Camera_ID, sep="_")) %>%
+  relocate(CameraLocation, .after=Camera_ID) %>%
+  dplyr::select(-Notes)
+cams.19 <- read_csv(here("data","All_Camera_Stations_19-20.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = "2019") %>%
+  rename("Set_date"="Setup_date", "Pull_date"="Retrieval_date", "Problem1_f"="Problem1_from", "Problem1_t"="Problem1_to", "Problem2_f"="Problem2_from", "Problem2_t"="Problem2_to")
+cams.20 <- read_csv(here("data","All_Camera_Stations_20-21.csv")) %>%
+  st_as_sf(crs = 4326, coords = c('Longitude', 'Latitude')) %>%
+  mutate(Year = "2020") %>%
+  rename("Set_date"="Setup_date", "Pull_date"="Retrieval_date", "Problem1_f"="Problem1_from", "Problem1_t"="Problem1_to", "Problem2_f"="Problem2_from", "Problem2_t"="Problem2_to")
+
+cams <- rbind(cams.18, cams.19, cams.20) %>%
+  dplyr::select(Cell_ID, Year, geometry)%>%
+  st_transform(26910)
+
+# cams outline
+cams.outline <- cams %>%
+  dplyr::select(geometry) %>%
+  st_bbox() %>%
+  st_as_sfc() %>%
+  st_buffer(dist = 20000) %>%
+  st_transform(26910)
+
+# WPPP study area polygons
+ne_outline <- st_read(here("data", 'NE_SA.shp')) 
+ok_outline <- st_read(here("data", 'METHOW_SA.shp')) 
+wppp <- st_union(ne_outline, ok_outline) %>%
+  st_transform(26910)
+```
+
+
+### Main map
+```{r}
+wa_map <- ggplot() +
+  geom_sf(data = wa, fill = "white") +
+  geom_sf(data = cams.outline, fill = NA, linetype = 'dashed') +
+  geom_sf(data = wppp, fill = NA) +
+  theme_void() +
+  theme(legend.position = "none")
+wa_map
+```
+
+### Inset map
+```{r}
+xmin = 628066.1
+xmax = 977810.8
+xpos = .56*(xmax-xmin)+xmin
+ymin = 5288701 
+ymax = 5437468
+ypos = 0.37*(ymax-ymin)+ymin
+
+inset_map <- ggplot() +
+  theme_void() +
+  geom_sf(data = cams.outline, fill = NA, linetype = 'dashed') +
+  geom_sf(data = cams, aes(alpha = Year)) +
+  geom_sf(data = wppp, fill = NA) +
+  scalebar(cams, dist = 25, dist_unit = 'km', transform = F, model = "WGS84", st.size = 3.8, anchor = c(x = xpos, y = ypos), st.dist = 0.07, height = 0.05) +
+  theme(legend.text = element_text(size = 10), legend.position = c(0.47, 0.6))
+
+inset_map 
+```
+
+### Sticking them together
+```{r}
+together <- ggdraw() +
+  draw_plot(inset_map) +
+  draw_plot(wa_map, x = .55, y = 0.58, width = 0.25, height = 0.35) # lower: y = 0.035
+
+together
+
+# looks different here, adjust based on this
+tiff(here("map.tif"), res = 600, width = 6.5, height = 5, units = "in")
+together
+dev.off() 
+```
+
+

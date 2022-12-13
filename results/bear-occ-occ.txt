@@ -1,0 +1,4 @@
+term,Estimate,SE,z,P(>|z|)
+Intercept,1.56,0.209,7.463,0
+Elevation,0.601,0.161,3.728,0
+Elevation^2,-0.644,0.134,-4.817,0

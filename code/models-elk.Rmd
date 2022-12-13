@@ -1,0 +1,202 @@
+---
+title: "Elk"
+author: "Jessalyn Ayars"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(unmarked)
+library(lme4)
+library(here)
+select <- dplyr::select
+```
+
+
+## Occupancy modeling
+
+### Load data
+```{r}
+sitecovs <- read_csv(here("data-tidy", 'covs-site.csv'))
+scale.smoke <- read.table(here("data-tidy", "covs-obs-smoke-scaled.csv"))[,1:123] %>%
+  as.matrix()
+scale.days <- read.table(here("data-tidy",'covs-obs-day-scaled.csv')) %>%
+  as.matrix()
+scale.temp <- read.table(here("data-tidy",'covs-obs-temp-scaled.csv')) %>%
+  as.matrix()
+elk_detections <- read.table(here("data-tidy", "dh-elk.csv")) %>% as.matrix()
+```
+
+### Construct model frame
+```{r}
+elk.umf <- unmarkedFrameOccu(y = elk_detections, siteCovs = sitecovs, obsCovs = list(scale.days = scale.days, scale.smoke = scale.smoke, scale.temp = scale.temp))
+# ~ detection ~ occupancy
+```
+
+### Occupancy model selection
+```{r}
+det.covs=c("scale.days", "I(scale.days^2)", "Road_Type", "scale.cheight", "I(scale.cheight^2)", "scale.dtr", "I(scale.dtr^2)", "scale.temp", "I(scale.temp^2)") 
+occ.covs=c("conifer", "landmg2", "scale.elev", "I(scale.elev^2)", "scale.wadnr", "I(scale.wadnr^2)")
+
+det.list=paste(det.covs, collapse="+")  
+occ.list=paste(occ.covs, collapse="+")
+form=as.formula(paste("~",det.list, "~", occ.list))   #this creates a formula that unmarked understands
+
+elk.step <- occu(formula = form, elk.umf, method = "BFGS")
+
+#first for detection covariates
+while(max(summary(elk.step)[[2]][-1,4]) > 0.05){   
+  det.remove=which(summary(elk.step)[[2]][,4] == max(summary(elk.step)[[2]][-1,4])) - 1  #not including the intercept, so -1
+  if ((det.covs[det.remove] == "scale.days" & "I(scale.days^2)" %in% det.covs) |
+      (det.covs[det.remove] == "scale.cheight" & "I(scale.cheight^2)" %in% det.covs) |
+      (det.covs[det.remove] == "scale.dtr" & "I(scale.dtr^2)" %in% det.covs) |
+      (det.covs[det.remove] == "scale.temp" & "I(scale.temp^2)" %in% det.covs)) {
+    break
+  }
+  det.covs = det.covs[-det.remove]    
+  det.list=paste(det.covs, collapse="+")
+  form=as.formula(paste("~",det.list, "~", occ.list))
+  elk.step <- occu(formula = form, elk.umf, method = "BFGS")
+}
+summary(elk.step) # from here: remove road type
+elk.step.1 <- occu(~scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + 
+    scale.dtr + I(scale.dtr^2) + scale.temp + I(scale.temp^2) ~ 
+    conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + 
+        I(scale.wadnr^2), elk.umf, method = "BFGS")
+summary(elk.step.1) # drop days^2
+elk.step.2 <- occu(~scale.days + scale.cheight + I(scale.cheight^2) + 
+    scale.dtr + I(scale.dtr^2) + scale.temp + I(scale.temp^2) ~ 
+    conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + 
+        I(scale.wadnr^2), elk.umf, method = "BFGS")
+summary(elk.step.2) # drop days
+elk.step.3 <- occu(~ scale.cheight + I(scale.cheight^2) + 
+    scale.dtr + I(scale.dtr^2) + scale.temp + I(scale.temp^2) ~ 
+    conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + 
+        I(scale.wadnr^2), elk.umf, method = "BFGS")
+summary(elk.step.3) # drop temp^2
+elk.step.4 <- occu(~ scale.cheight + I(scale.cheight^2) + 
+    scale.dtr + I(scale.dtr^2) + scale.temp ~ 
+    conifer + landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + 
+        I(scale.wadnr^2), elk.umf, method = "BFGS")
+summary(elk.step.4) # good
+det.list = "scale.cheight+I(scale.cheight^2)+scale.dtr+I(scale.dtr^2)+scale.temp"
+
+#now for occupancy 
+while(max(summary(elk.step.4)[[1]][-1,4]) > 0.05){
+  occ.remove=which(summary(elk.step.4)[[1]][,4] == max(summary(elk.step.4)[[1]][-1,4])) - 1  
+  if ((occ.covs[occ.remove] == "scale.elev" & "I(scale.elev^2)" %in% occ.covs) |
+      (occ.covs[occ.remove] == "scale.wadnr" & "I(scale.wadnr^2)" %in% occ.covs)) {
+    break
+  }  
+  occ.covs = occ.covs[-occ.remove]
+  occ.list=paste(occ.covs, collapse="+")
+  form=as.formula(paste("~",det.list, "~", occ.list))
+  elk.step.4 <- occu(formula = form, elk.umf, method = "BFGS")
+}
+summary(elk.step.4) 
+
+elk.smoke <- occu(~scale.cheight + I(scale.cheight^2) + scale.dtr + I(scale.dtr^2) + 
+    scale.temp + scale.smoke ~ conifer + scale.elev + I(scale.elev^2), elk.umf, method = "BFGS")
+summary(elk.smoke) # Not significant
+```
+
+### Results tables
+```{r}
+# detection
+elk.occ.det.final <- tibble(summary(elk.smoke)$det)
+rows1 <- c("Intercept", "Camera height", "Camera height^2", "Distance to linear feature", "Distance to linear feature^2", "Temperature", "PM 2.5")
+elk.occ.det.final <- elk.occ.det.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+write_csv(elk.occ.det.final, here("results", "elk-occ-det.txt"))
+
+# occupancy
+elk.occ.occ.final <- tibble(summary(elk.smoke)$state)
+rows1 <- c("Intercept", "Habitat type (other)", "Elevation", "Elevation^2")
+elk.occ.occ.final <- elk.occ.occ.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+write_csv(elk.occ.occ.final, here("results", "elk-occ-occ.txt"))
+```
+
+## Poisson regression
+```{r}
+full_data.elk <- read_csv(here("data-tidy", "poisson-data-elk.csv"))
+```
+
+### Poisson model selection
+```{r}
+covs=c("scale.days", "I(scale.days^2)", "Road_Type", "scale.cheight", "I(scale.cheight^2)", "scale.dtr", "I(scale.dtr^2)", "scale.temp", "I(scale.temp^2)", "conifer", "landmg2", "scale.elev", "I(scale.elev^2)", "scale.wadnr", "I(scale.wadnr^2)")
+
+covs.list = paste(covs, collapse="+")  
+form = as.formula(paste("delta_times_pics ~ (1|Cell_ID) +",covs.list))
+
+det.elk.step <- glmer(formula = form, full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+
+while(max(summary(det.elk.step)$coefficients[-1,4]) > 0.05){
+  remove=which(summary(det.elk.step)$coefficients[-1,4] == max(summary(det.elk.step)$coefficients[-1,4]))
+  if ((covs[remove] == "scale.days" & "I(scale.days^2)" %in% covs) |
+      (covs[remove] == "scale.cheight" & "I(scale.cheight^2)" %in% covs) |
+      (covs[remove] == "scale.dtr" & "I(scale.dtr^2)" %in% covs) |
+      (covs[remove] == "scale.temp" & "I(scale.temp^2)" %in% covs) |
+      (covs[remove] == "scale.elev" & "I(scale.elev^2)" %in% covs) |
+      (covs[remove] == "scale.wadnr" & "I(scale.wadnr^2)" %in% covs)) {
+    break
+  }  
+  covs = covs[-remove]
+  if(length(covs) > 0) {
+    covs.list = paste(covs, collapse="+")
+    form = as.formula(paste("delta_times_pics ~ (1|Cell_ID) +", covs.list))}
+  else {
+   form = as.formula("delta_times_pics ~ (1|Cell_ID)") 
+  }
+  det.elk.step <- glmer(formula = form, full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+}
+summary(det.elk.step) # did absolutely nothing! from here: remove road type
+det.elk.step.1 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + I(scale.cheight^2) + scale.dtr + 
+    I(scale.dtr^2) + scale.temp + I(scale.temp^2) + conifer + 
+    landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + I(scale.wadnr^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.1) # remove cheight^2
+det.elk.step.2 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.dtr + 
+    I(scale.dtr^2) + scale.temp + I(scale.temp^2) + conifer + 
+    landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr + I(scale.wadnr^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.2) # remove wadnr^2
+det.elk.step.3 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.dtr + 
+    I(scale.dtr^2) + scale.temp + I(scale.temp^2) + conifer + 
+    landmg2 + scale.elev + I(scale.elev^2) + scale.wadnr, full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.3) # remove wadnr
+det.elk.step.4 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.dtr + 
+    I(scale.dtr^2) + scale.temp + I(scale.temp^2) + conifer + 
+    landmg2 + scale.elev + I(scale.elev^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.4) # drop dtr^2
+det.elk.step.5 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.dtr + scale.temp + I(scale.temp^2) + conifer + 
+    landmg2 + scale.elev + I(scale.elev^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.5) # drop temp^2
+det.elk.step.6 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.dtr + scale.temp + conifer + landmg2 + scale.elev + I(scale.elev^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.6) # drop temp
+det.elk.step.7 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.cheight + scale.dtr + conifer + landmg2 + scale.elev + I(scale.elev^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.7) # drop cheight
+det.elk.step.8 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + scale.dtr + conifer + landmg2 + scale.elev + I(scale.elev^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.8) # drop dtr
+det.elk.step.9 <- glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + conifer + landmg2 + scale.elev + I(scale.elev^2), full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.step.9)
+
+# adding pm 2.5
+det.elk.smoke <-  glmer(delta_times_pics ~ (1 | Cell_ID) + scale.days + I(scale.days^2) + conifer + 
+    landmg2 + scale.elev + I(scale.elev^2) + scale.smoke, data = full_data.elk, family = "poisson", glmerControl(optimizer = "bobyqa"))
+summary(det.elk.smoke) # not sig
+```
+
+### results tables
+```{r}
+elk.det.final <- coef(summary(det.elk.smoke)) %>%
+  as_tibble() 
+
+rows1 <- c("Intercept", "Days", "Days^2", "Habitat type (other)", "Land management (public)", "Elevation", "Elevation^2", "PM 2.5")
+elk.det.final <- elk.det.final %>% mutate(term = rows1) %>% relocate(term, .before=Estimate) %>%
+  mutate(across(where(is.numeric), round, 3))
+
+write_csv(elk.det.final, here("results", "elk-pois.txt"))
+```
