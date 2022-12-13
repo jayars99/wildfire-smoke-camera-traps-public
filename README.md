@@ -1,7 +1,7 @@
 # wildfire-smoke-camera-traps-public
 Reproducible code and final datasets for model selection, as well as data cleaning code from "Camera traps link population-level activity patterns with wildfire smoke events for mammals in Eastern Washington State," manuscript in preparation. Covariate cleaning code depends on camera trap location data not provided in this repository, which can be obtained by contacting the Washington Department of Fish and Wildlife.
 
-Authors: Jessalyn Ayars, Robert L. Emmet, Sarah B. Bassing, Olivia V. Sanderfoot, and Beth Gardner
+Authors: Jessalyn Ayars, Robert L. Emmet, Sarah B. Bassing, Olivia V. Sanderfoot, Sierra Raby, Alexandra Karambelas, Eric P. James, Ravan Ahmadov, and Beth Gardner
 
 Contents:
 
