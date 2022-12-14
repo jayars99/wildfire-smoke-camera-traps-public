@@ -49,7 +49,8 @@ cams.20 <- read_csv(here("data","All_Camera_Stations_20-21.csv")) %>%
 
 cams <- rbind(cams.18, cams.19, cams.20) %>%
   dplyr::select(Cell_ID, Year, geometry)%>%
-  st_transform(26910)
+  st_transform(26910) %>%
+  rename(`Camera traps` = Year)
 
 # cams outline
 cams.outline <- cams %>%
@@ -74,7 +75,7 @@ wa_map <- ggplot() +
   geom_sf(data = cams.outline, fill = NA, linetype = 'dashed') +
   geom_sf(data = wppp, fill = NA) +
   theme_void() +
-  theme(legend.position = "none")
+  theme(legend.position = "none") 
 wa_map
 ```
 
@@ -90,10 +91,11 @@ ypos = 0.37*(ymax-ymin)+ymin
 inset_map <- ggplot() +
   theme_void() +
   geom_sf(data = cams.outline, fill = NA, linetype = 'dashed') +
-  geom_sf(data = cams, aes(alpha = Year)) +
+  geom_sf(data = cams, aes(alpha = `Camera traps`)) +
   geom_sf(data = wppp, fill = NA) +
   scalebar(cams, dist = 25, dist_unit = 'km', transform = F, model = "WGS84", st.size = 3.8, anchor = c(x = xpos, y = ypos), st.dist = 0.07, height = 0.05) +
-  theme(legend.text = element_text(size = 10), legend.position = c(0.47, 0.6))
+  theme(legend.text = element_text(size = 10), legend.position = c(0.47, 0.6)) +
+  north(cams, symbol = 3, location = "bottomleft", scale = 0.2, anchor = c(x = xmin + 20000, y = ymin + 30000))
 
 inset_map 
 ```
@@ -107,7 +109,7 @@ together <- ggdraw() +
 together
 
 # looks different here, adjust based on this
-tiff(here("map.tif"), res = 600, width = 6.5, height = 5, units = "in")
+tiff(here("results", "map.tif"), res = 600, width = 6.5, height = 5, units = "in")
 together
 dev.off() 
 ```

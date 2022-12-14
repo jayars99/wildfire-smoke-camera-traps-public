@@ -1,0 +1,430 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2638
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Roman;\f1\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;}
+\margl1440\margr1440\vieww9980\viewh8400\viewkind0
+\deftab720
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 # This script processes raw grib files from NOAA's HRRR-Smoke experimental dataset for smoke exposure studies # First it unzips tar files and finds missing data # Next it creates daily average files, outputting to tiff # Finally it uploads to Google Earth Engine (via Google Cloud Storage) for analysis # Setup - packages from osgeo import gdal from osgeo.gdalnumeric import * from osgeo.gdalconst import *\
+\
+\
+# Setup - drive connection from google.colab import drive drive.mount('/content/drive')\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 Mounted at /content/drive\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# unzipping tar.gz files import tarfile tar = tarfile.open('/content/drive/MyDrive/for_OS/201910.tar.gz') tar.extractall('/content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910')\
+\
+\
+# count number of nonzero files per initialization to find missing initializaitons import os directory = "/content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910" # change to select month # iterate over initalization folders in month directory for init_folder in os.listdir(directory): initPath = os.path.join(directory, init_folder) fileSizes = [] #print(initPath) basename = os.path.basename(initPath) print(basename) # continue to postprd folder for postprd in os.listdir(initPath): postprdPath = os.path.join(initPath, postprd) # continue to grib file and call size for grib in os.listdir(postprdPath): file_size = os.path.getsize(postprdPath+'/'+grib) # in bytes fileSizes.append(file_size) # count number of 0 b files numZeros = fileSizes.count(0) # subtract number of 0 files from total number of files numNonZero = len(fileSizes)-numZeros print(str(numNonZero)+" files.")\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 2019102512\
+46 files.\
+2019100106\
+49 files.\
+2019100112\
+49 files.\
+2019100118\
+26 files.\
+2019100200\
+49 files.\
+2019100212\
+39 files.\
+2019100300\
+49 files.\
+2019100306\
+49 files.\
+2019100312\
+49 files.\
+2019100318\
+49 files.\
+2019100400\
+49 files.\
+2019100406\
+49 files.\
+2019100412\
+26 files.\
+2019100418\
+49 files.\
+2019100500\
+49 files.\
+2019100506\
+49 files.\
+2019100512\
+49 files.\
+2019100518\
+49 files.\
+2019100600\
+49 files.\
+2019100606\
+3 files.\
+2019100612\
+20 files.\
+2019100618\
+38 files.\
+2019100700\
+6 files.\
+2019100712\
+21 files.\
+2019100718\
+49 files.\
+2019100800\
+49 files.\
+2019100912\
+49 files.\
+2019100918\
+49 files.\
+2019101000\
+46 files.\
+2019101018\
+49 files.\
+2019101100\
+49 files.\
+2019101106\
+49 files.\
+2019101112\
+49 files.\
+2019101118\
+49 files.\
+2019101200\
+49 files.\
+2019101206\
+49 files.\
+2019101212\
+26 files.\
+2019101218\
+26 files.\
+2019101300\
+49 files.\
+2019101306\
+49 files.\
+2019101312\
+49 files.\
+2019101412\
+49 files.\
+2019101418\
+25 files.\
+2019101512\
+31 files.\
+2019101518\
+49 files.\
+2019101600\
+49 files.\
+2019101606\
+18 files.\
+2019101718\
+49 files.\
+2019101806\
+49 files.\
+2019101812\
+49 files.\
+2019101818\
+49 files.\
+2019101900\
+49 files.\
+2019101906\
+49 files.\
+2019101912\
+49 files.\
+2019101918\
+49 files.\
+2019102000\
+49 files.\
+2019102018\
+28 files.\
+2019102100\
+49 files.\
+2019102118\
+49 files.\
+2019102218\
+49 files.\
+2019102300\
+49 files.\
+2019102306\
+49 files.\
+2019102312\
+49 files.\
+2019102318\
+49 files.\
+2019102400\
+49 files.\
+2019102406\
+49 files.\
+2019102412\
+49 files.\
+2019102418\
+49 files.\
+2019102500\
+49 files.\
+2019102506\
+49 files.\
+2019102600\
+10 files.\
+2019102606\
+49 files.\
+2019102618\
+49 files.\
+2019102700\
+49 files.\
+2019102706\
+49 files.\
+2019102712\
+49 files.\
+2019102718\
+49 files.\
+2019102800\
+33 files.\
+2019102812\
+49 files.\
+2019102918\
+49 files.\
+2019103000\
+1 files.\
+2019103006\
+28 files.\
+2019103012\
+49 files.\
+2019103100\
+49 files.\
+2019103112\
+49 files.\
+2019103118\
+49 files.\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Averaging and output to tif # new code generalizable to 00 or 00/12 initialization files from string import ascii_uppercase as letter import os # main if __name__ == "__main__": gdal_calc = '/content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py' command = ['python', gdal_calc] # Edit the five variables below to change the date, # files, or how many are initialized at midnight -vs- noon year = '2019' month = '10' day = '21' totalFiles = 24 nfile_init_at_midnight = 24 # keep as 12 except for days with all 12 files missing only then use 24 dd = year + month + day smoke_path1 = "/content/drive/MyDrive/HRRRsmoke_OS/grib2_files/" + year + month + "/" #smoke_path1 = "/content/drive/MyDrive/NOAA/grib2_files/" + year + month + "/" smoke_path2 = "/postprd/nearsfc_smoke_" smoke_path3 = ".grib2" ifile = 0; strStart = '00' for i in range(totalFiles): command.append('-' + letter[i]) ordinal = str(ifile) if ifile<10: ordinal = '0' + ordinal command.append(smoke_path1 + dd + strStart + smoke_path2 + ordinal + smoke_path3) ifile = ifile + 1 if ifile >= nfile_init_at_midnight: ifile = 0 strStart = '12' output = "/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/" + dd + ".tiff" #output = "/content/drive/MyDrive/NOAA/grib2_files/averaged3/" + dd + ".tiff" command.append("--outfile=" + output) letrList = '+'.join(letter[:totalFiles]) command.append('--calc="(' + letrList + ')/' + str(totalFiles) + '"') # command.append('--calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"') theCommand = ' '.join(command) print('command=[' + theCommand + ']') os.system(theCommand)\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 command=[python /content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py -A /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_00.grib2 -B /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_01.grib2 -C /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_02.grib2 -D /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_03.grib2 -E /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_04.grib2 -F /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_05.grib2 -G /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_06.grib2 -H /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_07.grib2 -I /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_08.grib2 -J /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_09.grib2 -K /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_10.grib2 -L /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_11.grib2 -M /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_12.grib2 -N /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_13.grib2 -O /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_14.grib2 -P /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_15.grib2 -Q /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_16.grib2 -R /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_17.grib2 -S /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_18.grib2 -T /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_19.grib2 -U /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_20.grib2 -V /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_21.grib2 -W /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_22.grib2 -X /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_23.grib2 --outfile=/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191021.tiff --calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"]\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Averaging and output to tif # new code generalizable to 00 or 00/12 initialization files from string import ascii_uppercase as letter import os # main if __name__ == "__main__": gdal_calc = '/content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py' command = ['python', gdal_calc] # Edit the five variables below to change the date, # files, or how many are initialized at midnight -vs- noon year = '2019' month = '10' day = '20' totalFiles = 24 nfile_init_at_midnight = 24 # keep as 12 except for days with all 12 files missing only then use 24 dd = year + month + day smoke_path1 = "/content/drive/MyDrive/HRRRsmoke_OS/grib2_files/" + year + month + "/" #smoke_path1 = "/content/drive/MyDrive/NOAA/grib2_files/" + year + month + "/" smoke_path2 = "/postprd/nearsfc_smoke_" smoke_path3 = ".grib2" ifile = 0; strStart = '00' for i in range(totalFiles): command.append('-' + letter[i]) ordinal = str(ifile) if ifile<10: ordinal = '0' + ordinal command.append(smoke_path1 + dd + strStart + smoke_path2 + ordinal + smoke_path3) ifile = ifile + 1 if ifile >= nfile_init_at_midnight: ifile = 0 strStart = '12' output = "/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/" + dd + ".tiff" #output = "/content/drive/MyDrive/NOAA/grib2_files/averaged3/" + dd + ".tiff" command.append("--outfile=" + output) letrList = '+'.join(letter[:totalFiles]) command.append('--calc="(' + letrList + ')/' + str(totalFiles) + '"') # command.append('--calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"') theCommand = ' '.join(command) print('command=[' + theCommand + ']') os.system(theCommand)\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 command=[python /content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py -A /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_00.grib2 -B /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_01.grib2 -C /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_02.grib2 -D /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_03.grib2 -E /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_04.grib2 -F /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_05.grib2 -G /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_06.grib2 -H /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_07.grib2 -I /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_08.grib2 -J /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_09.grib2 -K /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_10.grib2 -L /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_11.grib2 -M /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_12.grib2 -N /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_13.grib2 -O /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_14.grib2 -P /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_15.grib2 -Q /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_16.grib2 -R /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_17.grib2 -S /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_18.grib2 -T /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_19.grib2 -U /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_20.grib2 -V /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_21.grib2 -W /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_22.grib2 -X /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102000/postprd/nearsfc_smoke_23.grib2 --outfile=/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191020.tiff --calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"]\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# special case 1 - no 00 import os import os ! python /content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py \\ -A /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_12.grib2 \\ -B /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_13.grib2 \\ -C /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_14.grib2 \\ -D /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_15.grib2 \\ -E /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_16.grib2 \\ -F /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_17.grib2 \\ -G /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_18.grib2 \\ -H /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_19.grib2 \\ -I /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_20.grib2 \\ -J /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_21.grib2 \\ -K /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_22.grib2 \\ -L /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101412/postprd/nearsfc_smoke_23.grib2 \\ -M /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_00.grib2 \\ -N /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_01.grib2 \\ -O /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_02.grib2 \\ -P /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_03.grib2 \\ -Q /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_04.grib2 \\ -R /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_05.grib2 \\ -S /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_06.grib2 \\ -T /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_07.grib2 \\ -U /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_08.grib2 \\ -V /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_09.grib2 \\ -W /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_10.grib2 \\ -X /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019101512/postprd/nearsfc_smoke_11.grib2 \\ --outfile=/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191015.tiff \\ --calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"\
+\
+\
+# special case 2 - no 00, previous day has no 12 import os ! python /content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py \\ -A /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_24.grib2 \\ -B /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_25.grib2 \\ -C /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_26.grib2 \\ -D /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_27.grib2 \\ -E /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_28.grib2 \\ -F /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_29.grib2 \\ -G /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_30.grib2 \\ -H /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_31.grib2 \\ -I /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_32.grib2 \\ -J /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_33.grib2 \\ -K /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_34.grib2 \\ -L /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100800/postprd/nearsfc_smoke_35.grib2 \\ -M /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_00.grib2 \\ -N /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_01.grib2 \\ -O /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_02.grib2 \\ -P /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_03.grib2 \\ -Q /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_04.grib2 \\ -R /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_05.grib2 \\ -S /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_06.grib2 \\ -T /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_07.grib2 \\ -U /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_08.grib2 \\ -V /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_09.grib2 \\ -W /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_10.grib2 \\ -X /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019100912/postprd/nearsfc_smoke_11.grib2 \\ --outfile=/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191009.tiff \\ --calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"\
+\
+\
+# special case 3: all 00 and 12 is missing -> use all previous day _12 import os ! python /content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py \\ -A /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_12.grib2 \\ -B /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_13.grib2 \\ -C /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_14.grib2 \\ -D /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_15.grib2 \\ -E /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_16.grib2 \\ -F /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_17.grib2 \\ -G /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_18.grib2 \\ -H /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_19.grib2 \\ -I /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_20.grib2 \\ -J /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_21.grib2 \\ -K /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_22.grib2 \\ -L /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_23.grib2 \\ -M /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_24.grib2 \\ -N /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_25.grib2 \\ -O /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_26.grib2 \\ -P /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_27.grib2 \\ -Q /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_28.grib2 \\ -R /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_29.grib2 \\ -S /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_30.grib2 \\ -T /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_31.grib2 \\ -U /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_32.grib2 \\ -V /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_33.grib2 \\ -W /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_34.grib2 \\ -X /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201808/2018082512/postprd/nearsfc_smoke_35.grib2 \\ --outfile=/content/drive/MyDrive/HRRRsmoke_OS/averaged/20180826.tiff \\ --calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 0.. 0.. 0.. 0.. 0.. 0.. 0.. 0.. 0.. 0.. 0.. 1.. 1.. 1.. 1.. 1.. 1.. 1.. 1.. 1.. 1.. 1.. 2.. 2.. 2.. 2.. 2.. 2.. 2.. 2.. 2.. 2.. 3.. 3.. 3.. 3.. 3.. 3.. 3.. 3.. 3.. 3.. 3.. 4.. 4.. 4.. 4.. 4.. 4.. 4.. 4.. 4.. 4.. 5.. 5.. 5.. 5.. 5.. 5.. 5.. 5.. 5.. 5.. 5.. 6.. 6.. 6.. 6.. 6.. 6.. 6.. 6.. 6.. 6.. 6.. 7.. 7.. 7.. 7.. 7.. 7.. 7.. 7.. 7.. 7.. 8.. 8.. 8.. 8.. 8.. 8.. 8.. 8.. 8.. 8.. 8.. 9.. 9.. 9.. 9.. 9.. 9.. 9.. 9.. 9.. 9.. 10.. 10.. 10.. 10.. 10.. 10.. 10.. 10.. 10.. 10.. 10.. 11.. 11.. 11.. 11.. 11.. 11.. 11.. 11.. 11.. 11.. 11.. 12.. 12.. 12.. 12.. 12.. 12.. 12.. 12.. 12.. 12.. 13.. 13.. 13.. 13.. 13.. 13.. 13.. 13.. 13.. 13.. 13.. 14.. 14.. 14.. 14.. 14.. 14.. 14.. 14.. 14.. 14.. 15.. 15.. 15.. 15.. 15.. 15.. 15.. 15.. 15.. 15.. 15.. 16.. 16.. 16.. 16.. 16.. 16.. 16.. 16.. 16.. 16.. 16.. 17.. 17.. 17.. 17.. 17.. 17.. 17.. 17.. 17.. 17.. 18.. 18.. 18.. 18.. 18.. 18.. 18.. 18.. 18.. 18.. 18.. 19.. 19.. 19.. 19.. 19.. 19.. 19.. 19.. 19.. 19.. 20.. 20.. 20.. 20.. 20.. 20.. 20.. 20.. 20.. 20.. 20.. 21.. 21.. 21.. 21.. 21.. 21.. 21.. 21.. 21.. 21.. 22.. 22.. 22.. 22.. 22.. 22.. 22.. 22.. 22.. 22.. 22.. 23.. 23.. 23.. 23.. 23.. 23.. 23.. 23.. 23.. 23.. 23.. 24.. 24.. 24.. 24.. 24.. 24.. 24.. 24.. 24.. 24.. 25.. 25.. 25.. 25.. 25.. 25.. 25.. 25.. 25.. 25.. 25.. 26.. 26.. 26.. 26.. 26.. 26.. 26.. 26.. 26.. 26.. 27.. 27.. 27.. 27.. 27.. 27.. 27.. 27.. 27.. 27.. 27.. 28.. 28.. 28.. 28.. 28.. 28.. 28.. 28.. 28.. 28.. 28.. 29.. 29.. 29.. 29.. 29.. 29.. 29.. 29.. 29.. 29.. 30.. 30.. 30.. 30.. 30.. 30.. 30.. 30.. 30.. 30.. 30.. 31.. 31.. 31.. 31.. 31.. 31.. 31.. 31.. 31.. 31.. 32.. 32.. 32.. 32.. 32.. 32.. 32.. 32.. 32.. 32.. 32.. 33.. 33.. 33.. 33.. 33.. 33.. 33.. 33.. 33.. 33.. 33.. 34.. 34.. 34.. 34.. 34.. 34.. 34.. 34.. 34.. 34.. 35.. 35.. 35.. 35.. 35.. 35.. 35.. 35.. 35.. 35.. 35.. 36.. 36.. 36.. 36.. 36.. 36.. 36.. 36.. 36.. 36.. 37.. 37.. 37.. 37.. 37.. 37.. 37.. 37.. 37.. 37.. 37.. 38.. 38.. 38.. 38.. 38.. 38.. 38.. 38.. 38.. 38.. 38.. 39.. 39.. 39.. 39.. 39.. 39.. 39.. 39.. 39.. 39.. 40.. 40.. 40.. 40.. 40.. 40.. 40.. 40.. 40.. 40.. 40.. 41.. 41.. 41.. 41.. 41.. 41.. 41.. 41.. 41.. 41.. 42.. 42.. 42.. 42.. 42.. 42.. 42.. 42.. 42.. 42.. 42.. 43.. 43.. 43.. 43.. 43.. 43.. 43.. 43.. 43.. 43.. 44.. 44.. 44.. 44.. 44.. 44.. 44.. 44.. 44.. 44.. 44.. 45.. 45.. 45.. 45.. 45.. 45.. 45.. 45.. 45.. 45.. 45.. 46.. 46.. 46.. 46.. 46.. 46.. 46.. 46.. 46.. 46.. 47.. 47.. 47.. 47.. 47.. 47.. 47.. 47.. 47.. 47.. 47.. 48.. 48.. 48.. 48.. 48.. 48.. 48.. 48.. 48.. 48.. 49.. 49.. 49.. 49.. 49.. 49.. 49.. 49.. 49.. 49.. 49.. 50.. 50.. 50.. 50.. 50.. 50.. 50.. 50.. 50.. 50.. 50.. 51.. 51.. 51.. 51.. 51.. 51.. 51.. 51.. 51.. 51.. 52.. 52.. 52.. 52.. 52.. 52.. 52.. 52.. 52.. 52.. 52.. 53.. 53.. 53.. 53.. 53.. 53.. 53.. 53.. 53.. 53.. 54.. 54.. 54.. 54.. 54.. 54.. 54.. 54.. 54.. 54.. 54.. 55.. 55.. 55.. 55.. 55.. 55.. 55.. 55.. 55.. 55.. 55.. 56.. 56.. 56.. 56.. 56.. 56.. 56.. 56.. 56.. 56.. 57.. 57.. 57.. 57.. 57.. 57.. 57.. 57.. 57.. 57.. 57.. 58.. 58.. 58.. 58.. 58.. 58.. 58.. 58.. 58.. 58.. 59.. 59.. 59.. 59.. 59.. 59.. 59.. 59.. 59.. 59.. 59.. 60.. 60.. 60.. 60.. 60.. 60.. 60.. 60.. 60.. 60.. 61.. 61.. 61.. 61.. 61.. 61.. 61.. 61.. 61.. 61.. 61.. 62.. 62.. 62.. 62.. 62.. 62.. 62.. 62.. 62.. 62.. 62.. 63.. 63.. 63.. 63.. 63.. 63.. 63.. 63.. 63.. 63.. 64.. 64.. 64.. 64.. 64.. 64.. 64.. 64.. 64.. 64.. 64.. 65.. 65.. 65.. 65.. 65.. 65.. 65.. 65.. 65.. 65.. 66.. 66.. 66.. 66.. 66.. 66.. 66.. 66.. 66.. 66.. 66.. 67.. 67.. 67.. 67.. 67.. 67.. 67.. 67.. 67.. 67.. 67.. 68.. 68.. 68.. 68.. 68.. 68.. 68.. 68.. 68.. 68.. 69.. 69.. 69.. 69.. 69.. 69.. 69.. 69.. 69.. 69.. 69.. 70.. 70.. 70.. 70.. 70.. 70.. 70.. 70.. 70.. 70.. 71.. 71.. 71.. 71.. 71.. 71.. 71.. 71.. 71.. 71.. 71.. 72.. 72.. 72.. 72.. 72.. 72.. 72.. 72.. 72.. 72.. 72.. 73.. 73.. 73.. 73.. 73.. 73.. 73.. 73.. 73.. 73.. 74.. 74.. 74.. 74.. 74.. 74.. 74.. 74.. 74.. 74.. 74.. 75.. 75.. 75.. 75.. 75.. 75.. 75.. 75.. 75.. 75.. 76.. 76.. 76.. 76.. 76.. 76.. 76.. 76.. 76.. 76.. 76.. 77.. 77.. 77.. 77.. 77.. 77.. 77.. 77.. 77.. 77.. 77.. 78.. 78.. 78.. 78.. 78.. 78.. 78.. 78.. 78.. 78.. 79.. 79.. 79.. 79.. 79.. 79.. 79.. 79.. 79.. 79.. 79.. 80.. 80.. 80.. 80.. 80.. 80.. 80.. 80.. 80.. 80.. 81.. 81.. 81.. 81.. 81.. 81.. 81.. 81.. 81.. 81.. 81.. 82.. 82.. 82.. 82.. 82.. 82.. 82.. 82.. 82.. 82.. 83.. 83.. 83.. 83.. 83.. 83.. 83.. 83.. 83.. 83.. 83.. 84.. 84.. 84.. 84.. 84.. 84.. 84.. 84.. 84.. 84.. 84.. 85.. 85.. 85.. 85.. 85.. 85.. 85.. 85.. 85.. 85.. 86.. 86.. 86.. 86.. 86.. 86.. 86.. 86.. 86.. 86.. 86.. 87.. 87.. 87.. 87.. 87.. 87.. 87.. 87.. 87.. 87.. 88.. 88.. 88.. 88.. 88.. 88.. 88.. 88.. 88.. 88.. 88.. 89.. 89.. 89.. 89.. 89.. 89.. 89.. 89.. 89.. 89.. 89.. 90.. 90.. 90.. 90.. 90.. 90.. 90.. 90.. 90.. 90.. 91.. 91.. 91.. 91.. 91.. 91.. 91.. 91.. 91.. 91.. 91.. 92.. 92.. 92.. 92.. 92.. 92.. 92.. 92.. 92.. 92.. 93.. 93.. 93.. 93.. 93.. 93.. 93.. 93.. 93.. 93.. 93.. 94.. 94.. 94.. 94.. 94.. 94.. 94.. 94.. 94.. 94.. 94.. 95.. 95.. 95.. 95.. 95.. 95.. 95.. 95.. 95.. 95.. 96.. 96.. 96.. 96.. 96.. 96.. 96.. 96.. 96.. 96.. 96.. 97.. 97.. 97.. 97.. 97.. 97.. 97.. 97.. 97.. 97.. 98.. 98.. 98.. 98.. 98.. 98.. 98.. 98.. 98.. 98.. 98.. 99.. 99.. 99.. 99.. 99.. 99.. 99.. 99.. 99.. 99.. 100 - Done\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# special case 4: all 00 and 12 is missing, previous 12 missing -> use all previous day _00 import os ! python /content/drive/MyDrive/NOAA/grib2_files_test/gdal_calc.py \\ -A /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_24.grib2 \\ -B /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_25.grib2 \\ -C /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_26.grib2 \\ -D /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_27.grib2 \\ -E /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_28.grib2 \\ -F /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_29.grib2 \\ -G /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_30.grib2 \\ -H /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_31.grib2 \\ -I /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_32.grib2 \\ -J /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_33.grib2 \\ -K /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_34.grib2 \\ -L /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_35.grib2 \\ -M /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_36.grib2 \\ -N /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_37.grib2 \\ -O /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_38.grib2 \\ -P /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_39.grib2 \\ -Q /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_40.grib2 \\ -R /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_41.grib2 \\ -S /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_42.grib2 \\ -T /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_43.grib2 \\ -U /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_44.grib2 \\ -V /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_45.grib2 \\ -W /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_46.grib2 \\ -X /content/drive/MyDrive/HRRRsmoke_OS/grib2_files/201910/2019102100/postprd/nearsfc_smoke_47.grib2 \\ --outfile=/content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191022.tiff \\ --calc="(A+B+C+D+E+F+G+H+I+J+K+L+M+N+O+P+Q+R+S+T+U+V+W+X)/24"\
+\
+\
+# Connect to Google Cloud Storage from google.colab import auth auth.authenticate_user() project_id = 'amazing-blend-309705' !gcloud config set project \{project_id\} !gsutil ls\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 Updated property [core/project].\
+gs://noaa_os_2/\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Transfer from drive to GCS bucket_name = 'noaa_os_2' !gsutil -m cp -r /content/drive/MyDrive/HRRRsmoke_OS/averaged2019/* gs://\{bucket_name\}/\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190702.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190701.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190703.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190710.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190704.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190713.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190709.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190711.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190708.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190714.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190715.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190716.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190718.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190719.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190720.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190721.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190722.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190723.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190724.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190725.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190726.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190727.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190728.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190729.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190730.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190731.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190801.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190803.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190804.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190805.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190806.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190807.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190808.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190809.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190810.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190811.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190812.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190813.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190814.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190815.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190816.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190817.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190818.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190819.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190820.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190821.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190822.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190823.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190824.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190825.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190826.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190827.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190828.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190829.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190830.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190831.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190901.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190902.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190903.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190904.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190905.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190906.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190907.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190908.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190909.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190910.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190913.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190914.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190915.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190916.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190917.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190918.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190919.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190920.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190921.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190922.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190923.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190925.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190924.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190926.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190927.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190928.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190929.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20190930.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191001.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191002.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191003.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191004.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191005.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191006.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191007.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191008.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191009.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191010.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191011.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191012.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191013.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191015.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191014.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191016.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191017.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191019.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191020.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191021.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191022.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191023.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191024.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191025.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191026.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191027.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191028.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191029.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191030.tiff [Content-Type=image/tiff]...\
+Copying file:///content/drive/MyDrive/HRRRsmoke_OS/averaged2019/20191031.tiff [Content-Type=image/tiff]...\
+- [114/114 files][  1.6 GiB/  1.6 GiB] 100% Done  84.5 MiB/s ETA 00:00:00       \
+Operation completed over 114 objects/1.6 GiB.                                    \
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Setup connection to Google Earth Engine import ee # Trigger the authentication flow for gee ee.Authenticate() # Initialize the library. ee.Initialize()\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 To authorize access needed by Earth Engine, open the following URL in a web browser and follow the instructions. If the web browser does not start automatically, please manually browse the URL below.\
+\
+    https://code.earthengine.google.com/client-auth?scopes=https%3A//www.googleapis.com/auth/earthengine%20https%3A//www.googleapis.com/auth/devstorage.full_control&request_id=Wsef0lspH2ZW_vnJHfkxZe1mupmNEYf-O3ISTePXlBY&tc=NJiMXyQ0yem6D6jecIgR2c1mXsZVAPYdEMZA7oynAJg&cc=xsPBb1o5qGNcYgdJ3i87IKOe8GnDAAvhkRY1EeO9xwU\
+\
+The authorization workflow will generate a code, which you should paste in the box below.\
+Enter verification code: 4/1AfgeXvtCDh9rvBS6sKFasmhxslofUrk57xivxvyrfS_Pg8CLWEHjTgyO28Q\
+\
+Successfully saved authorization token.\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# test GEE API to check connection: Print the elevation of Mount Everest. dem = ee.Image('USGS/SRTMGL1_003') xy = ee.Geometry.Point([86.9250, 27.9881]) elev = dem.sample(xy, 30).first().get('elevation').getInfo() print('Mount Everest elevation (m):', elev)\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 Mount Everest elevation (m): 8729\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Send files from GSC to GEE !earthengine upload image --asset_id=users/sraby/noaa_daily_2018/20180731 gs://noaa_os_1/20180731.tiff\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 Started upload task with ID: SFM6TEFDDABIWSD45YWCF2AD\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Send files from GSC to GEE !earthengine upload image --asset_id=users/sraby/noaa_daily_2018/20180730 gs://noaa_os_1/20180730.tiff\
+\
+\
+\pard\pardeftab720\partightenfactor0
+
+\f1\fs26 \cf0 Started upload task with ID: CWRKW6L32MEXJE7VVNFNPR44\
+\pard\pardeftab720\partightenfactor0
+
+\f0\fs24 \cf0 \
+\
+# Set start time on files (for time averaging in GEE) !earthengine asset set --time_start 2018-07-01 users/sraby/noaa_daily_2018/20180701 # And that's a wrap!\
+}

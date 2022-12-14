@@ -13,6 +13,8 @@ Contents:
   - models-species.html - model selection output for each species
   - figures.Rmd - code for figure development. Partially runnable
   - map.Rmd - code for map (another figure). Not runnable
+  - OS_grib2_to_tif.ipynb.rtf - Sierra Raby's HRRR-Smoke data processing python notebook output
+  - gee_extraction.txt - Sierra Raby's HRRR-Smoke data processing Google Earth Engine code
 
   data-raw:
 

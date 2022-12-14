@@ -1,0 +1,38 @@
+var OSpoints2020
+
+// add HRRR 2020 image collection
+var HRRR = ee.ImageCollection('users/sraby/noaa_daily_12/jun_to_nov')
+  .filterDate('2020-06-01', '2020-11-30')
+  
+// add os points
+var OSpoints = ee.FeatureCollection(OSpoints2020); 
+
+// function to extract time series of values for points 
+var mapfunc = function(feat) {
+  // get feature geometry
+  var geom = feat.geometry()
+  // function to iterate over the ImageCollection
+  var addProp = function(img, f) {
+    // cast Feature
+    var newf = ee.Feature(f)
+    // get date as string
+    var date = img.date().format()
+    // extract the pm value
+    var value2 = img.reduceRegion(ee.Reducer.first(), geom, 30).get('b1')
+    // if the value is not null, set the values as a property of the feature. The name of the property will be the date
+    return ee.Feature(ee.Algorithms.If(value2,
+                                       newf.set(date, ee.String(value2)),
+                                       newf.set(date, ee.String('No data'))))
+  }
+  var newfeat = ee.Feature(HRRR.iterate(addProp, feat))
+  return newfeat
+};
+
+// cast function to os points
+var newft = OSpoints.map(mapfunc);
+
+// send extracted values to csv in drive 
+Export.table.toDrive(newft,
+"export_2020testPoints",
+"export_2020testPoints",
+"export_2020testPoints");
